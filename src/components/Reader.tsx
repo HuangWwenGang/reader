@@ -390,16 +390,34 @@ export default function Reader({
     setSortedNotes([...highlights].sort((a, b) => cmp(a.cfi, b.cfi)))
   }, [highlights])
 
+  // display() can transiently reject in continuous mode when the target isn't
+  // rendered yet; retry once after a tick so jumps don't silently fail.
+  async function safeDisplay(target: string) {
+    const r = renditionRef.current
+    if (!r) return
+    try {
+      await r.display(target)
+    } catch (e) {
+      console.warn('display failed, retrying', target, e)
+      await new Promise((res) => setTimeout(res, 180))
+      try {
+        await r.display(target)
+      } catch (e2) {
+        console.warn('display failed again', target, e2)
+      }
+    }
+  }
+
   function jumpToNote(h: Highlight) {
     setPanel(null)
     setFloatBtn(null)
     setEditor(null)
-    renditionRef.current?.display(h.cfi).catch(console.error)
+    safeDisplay(h.cfi)
   }
 
   function navigateToc(href: string) {
     setPanel(null)
-    renditionRef.current?.display(href).catch(console.error)
+    safeDisplay(href)
   }
 
   if (error) {
