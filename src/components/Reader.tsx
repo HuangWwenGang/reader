@@ -436,21 +436,42 @@ export default function Reader({
     setSortedNotes([...highlights].sort((a, b) => cmp(a.cfi, b.cfi)))
   }, [highlights])
 
-  // display() can transiently reject in continuous mode when the target isn't
-  // rendered yet; retry once after a tick so jumps don't silently fail.
-  async function safeDisplay(target: string) {
+  // Did we actually land on the target section? (continuous display() is flaky)
+  function landedNear(loc: any, target: string): boolean {
+    if (!loc?.start) return false
+    if (target.startsWith('epubcfi(')) {
+      const seg = (s: string) => s?.match(/^epubcfi\((\/\d+\/\d+)/)?.[1] ?? ''
+      const a = seg(loc.start.cfi)
+      return !!a && a === seg(target)
+    }
+    const want = target.split('#')[0].split('/').pop() ?? ''
+    const cur = (loc.start.href ?? '').split('/').pop() ?? ''
+    return !!want && !!cur && (cur === want || cur.endsWith(want) || want.endsWith(cur))
+  }
+
+  // Jump and KEEP RETRYING until we've actually landed on the target — so the
+  // user taps once instead of mashing the entry several times to "refresh".
+  const jumpingRef = useRef(false)
+  async function robustDisplay(target: string) {
     const r = renditionRef.current
-    if (!r) return
+    if (!r || jumpingRef.current) return
+    jumpingRef.current = true
     try {
-      await r.display(target)
-    } catch (e) {
-      console.warn('display failed, retrying', target, e)
-      await new Promise((res) => setTimeout(res, 180))
-      try {
-        await r.display(target)
-      } catch (e2) {
-        console.warn('display failed again', target, e2)
+      for (let i = 0; i < 6; i++) {
+        try {
+          await r.display(target)
+        } catch {
+          /* ignore */
+        }
+        await new Promise((res) => setTimeout(res, 160 + i * 120))
+        try {
+          if (landedNear(r.currentLocation?.(), target)) break
+        } catch {
+          /* ignore */
+        }
       }
+    } finally {
+      jumpingRef.current = false
     }
   }
 
@@ -458,12 +479,12 @@ export default function Reader({
     setPanel(null)
     setFloatBtn(null)
     setEditor(null)
-    safeDisplay(h.cfi)
+    robustDisplay(h.cfi)
   }
 
   function navigateToc(href: string) {
     setPanel(null)
-    safeDisplay(href)
+    robustDisplay(href)
   }
 
   if (error) {
