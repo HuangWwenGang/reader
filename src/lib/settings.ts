@@ -46,6 +46,7 @@ export interface ThemeColors {
   card: string
   accent: string
   link: string
+  glass: string // translucent material for iOS-style popups (used with blur)
 }
 
 // One source of truth for colors — used for both the app chrome (CSS variables)
@@ -59,6 +60,7 @@ export const THEMES: Record<ThemeName, ThemeColors> = {
     card: '#ffffff',
     accent: '#7c6f64',
     link: '#3a6ea5',
+    glass: 'rgba(255, 255, 255, 0.72)',
   },
   sepia: {
     bg: '#f4ecd8',
@@ -68,6 +70,7 @@ export const THEMES: Record<ThemeName, ThemeColors> = {
     card: '#faf3e2',
     accent: '#a07b46',
     link: '#9a5b34',
+    glass: 'rgba(250, 243, 226, 0.74)',
   },
   // Deep true-black with bright text, like iOS Books' night mode — crisp,
   // high-contrast, comfortable on OLED.
@@ -79,6 +82,7 @@ export const THEMES: Record<ThemeName, ThemeColors> = {
     card: '#141414',
     accent: '#cbb791',
     link: '#a9c2e3',
+    glass: 'rgba(28, 28, 30, 0.64)',
   },
 }
 
@@ -131,6 +135,7 @@ export function applyTheme(theme: ThemeName): void {
   root.setProperty('--line', c.line)
   root.setProperty('--card', c.card)
   root.setProperty('--accent', c.accent)
+  root.setProperty('--glass', c.glass)
   // also drive the browser/PWA chrome
   document
     .querySelector('meta[name="theme-color"]')

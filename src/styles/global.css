@@ -394,50 +394,37 @@ button {
   background: var(--paper);
 }
 
-/* ---------- Floating highlight button ---------- */
+/* ---------- Annotation editor popup (iOS glass) ---------- */
 
-.float-btn {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  z-index: 50;
-  /* accent bg + card-colored text stays legible in light AND dark themes */
-  background: var(--accent);
-  color: var(--card);
-  border: none;
-  border-radius: 999px;
-  padding: 11px 18px;
-  font-size: 15px;
-  font-weight: 600;
-  box-shadow: var(--shadow);
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  animation: floatPop 0.14s ease both;
+.editor-backdrop {
+  background: rgba(0, 0, 0, 0.18) !important;
+  animation: fadeIn 0.2s ease both;
 }
-
-/* ---------- Annotation editor popup ---------- */
 
 .editor {
   position: fixed;
   z-index: 60;
-  width: min(340px, calc(100vw - 24px));
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-  padding: 12px;
+  width: min(360px, calc(100vw - 24px));
+  /* frosted "liquid glass" material */
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.32);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   transform-origin: top center;
-  animation: popIn 0.16s ease both;
+  animation: popIn 0.18s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .editor-quote {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   border-left: 3px solid var(--accent);
-  padding-left: 8px;
+  padding-left: 10px;
   max-height: 4.5em;
   overflow: hidden;
   line-height: 1.5;
@@ -445,48 +432,47 @@ button {
 
 .editor textarea {
   width: 100%;
-  min-height: 84px;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 10px;
+  min-height: 92px;
+  resize: none;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 13px;
   font: inherit;
-  font-size: 15px;
+  /* 16px avoids iOS auto-zoom when the field is focused */
+  font-size: 16px;
   line-height: 1.5;
   outline: none;
+  color: var(--ink);
+  background: rgba(127, 127, 127, 0.12);
 }
 
-.editor textarea:focus {
-  border-color: var(--accent);
+.editor textarea::placeholder {
+  color: var(--muted);
 }
 
 .tag-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
 }
 
 .tag-chip {
   border: 1px solid var(--line);
-  background: var(--paper);
+  background: rgba(127, 127, 127, 0.1);
   border-radius: 999px;
-  padding: 4px 11px;
+  padding: 6px 14px;
   font-size: 13px;
+  font-weight: 500;
   color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  transition: transform 0.1s ease;
 }
 
-.tag-chip .dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
+.tag-chip:active {
+  transform: scale(0.94);
 }
 
 .tag-chip.active {
-  border-color: var(--ink);
+  color: #fff;
   font-weight: 600;
 }
 
@@ -495,23 +481,43 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  margin-top: 2px;
 }
 
 .editor-actions .right {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+}
+
+/* iOS-style buttons */
+.ios-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 9px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  background: rgba(127, 127, 127, 0.16);
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
+.ios-btn:active {
+  transform: scale(0.95);
+  opacity: 0.85;
+}
+
+.ios-btn.primary {
+  background: var(--accent);
+  color: #fff;
 }
 
 .link-danger {
   border: none;
   background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  padding: 6px;
-}
-
-.link-danger:hover {
-  color: #e0533d;
+  color: #ff5a4d;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 6px 4px;
 }
 
 /* ---------- Side panels (TOC + Notes) ---------- */
@@ -626,17 +632,20 @@ button {
   right: 0;
   bottom: 0;
   z-index: 71;
-  background: var(--card);
-  border-top-left-radius: 18px;
-  border-top-right-radius: 18px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
   padding: 6px 18px calc(20px + env(safe-area-inset-bottom));
-  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 -6px 32px rgba(0, 0, 0, 0.22);
   display: flex;
   flex-direction: column;
   gap: 16px;
   max-width: 560px;
   margin: 0 auto;
-  animation: slideUp 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: slideUp 0.28s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .sheet-handle {

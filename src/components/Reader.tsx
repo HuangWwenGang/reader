@@ -29,13 +29,6 @@ import TocPanel, { type TocItem } from './TocPanel'
 import NotesPanel from './NotesPanel'
 import SettingsSheet from './SettingsSheet'
 
-interface FloatBtn {
-  anchor: AnchorRect
-  cfi: string
-  text: string
-  selDoc: Document
-}
-
 export default function Reader({
   bookId,
   onClose,
@@ -55,7 +48,6 @@ export default function Reader({
 
   const openEditor = useCallback((t: EditorTarget) => {
     editorOpenedRef.current = Date.now()
-    setFloatBtn(null)
     setEditor(t)
   }, [])
 
@@ -125,7 +117,6 @@ export default function Reader({
   const [toc, setToc] = useState<TocItem[]>([])
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [panel, setPanel] = useState<'toc' | 'notes' | null>(null)
-  const [floatBtn, setFloatBtn] = useState<FloatBtn | null>(null)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -135,27 +126,13 @@ export default function Reader({
   const settingsRef = useRef(settings)
   const prevFlowRef = useRef(settings.flow)
   const popupOpenRef = useRef(false)
-  const pendingCfiRef = useRef<string | null>(null) // gray "pending selection" highlight
 
   useEffect(() => {
     highlightsRef.current = highlights
   }, [highlights])
   useEffect(() => {
-    popupOpenRef.current = floatBtn != null || editor != null
-  }, [floatBtn, editor])
-
-  // remove the temporary gray "pending selection" highlight
-  const clearPending = useCallback(() => {
-    const cfi = pendingCfiRef.current
-    if (cfi) {
-      try {
-        renditionRef.current?.annotations.remove(cfi, 'highlight')
-      } catch {
-        /* ignore */
-      }
-      pendingCfiRef.current = null
-    }
-  }, [])
+    popupOpenRef.current = editor != null
+  }, [editor])
 
   // ---- annotation helpers (epub.js) ----
   const drawHighlight = useCallback((h: Highlight) => {
@@ -208,6 +185,7 @@ export default function Reader({
     }
     openEditor({
       highlightId: h.id,
+      cfi: h.cfi,
       text: h.text,
       note: h.note ?? '',
       tag: h.tag,
@@ -257,11 +235,13 @@ export default function Reader({
           setProgress(label)
         }
       }
-      clearPending()
-      setFloatBtn((b) => (b ? null : b))
     })
 
+    // Selection → pop the editor DIRECTLY (no intermediate button). We collapse
+    // the native selection so iOS's Copy/Look-Up callout disappears; the editor's
+    // quote shows what was selected. Save creates the highlight; cancel discards.
     rendition.on('selected', (cfiRange: string, contents: any) => {
+      if (popupOpenRef.current) return
       let range: Range | null = null
       try {
         range = contents.range(cfiRange)
@@ -272,28 +252,15 @@ export default function Reader({
       if (!range || !text) return
       const anchor = rangeToAnchor(contents.document, range)
       if (!anchor) return
-      // Draw our OWN gray highlight for the selection, then collapse the native
-      // selection — this makes iOS's Copy/Look-Up callout disappear so it can't
-      // cover our button. Our button + gray mark replace the system menu.
-      clearPending()
-      try {
-        rendition.annotations.add('highlight', cfiRange, {}, undefined, 'pending', {
-          fill: '#9a9a9a',
-          'fill-opacity': '0.35',
-        })
-        pendingCfiRef.current = cfiRange
-      } catch {
-        /* ignore */
-      }
       try {
         contents.window.getSelection()?.removeAllRanges()
       } catch {
         /* ignore */
       }
-      setFloatBtn({ anchor, cfi: cfiRange, text, selDoc: contents.document })
+      openEditor({ cfi: cfiRange, text, note: '', tag: undefined, anchor })
     })
 
-    // single tap in the reading area: dismiss a popup, else toggle the chrome
+    // single tap in the reading area: dismiss the editor, else toggle the chrome
     // (immersive). iOS reserves double-tap for word selection, so we use a tap.
     rendition.on('rendered', (_section: any, view: any) => {
       const doc: Document | undefined =
@@ -305,8 +272,6 @@ export default function Reader({
         if (sel && !sel.isCollapsed) return
         if ((ev.target as HTMLElement)?.closest?.('a[href]')) return
         if (popupOpenRef.current) {
-          clearPending()
-          setFloatBtn(null)
           setEditor(null)
           return
         }
@@ -481,67 +446,51 @@ export default function Reader({
     }
   }, [flushLocation, getPreciseCfi])
 
-  // ---- create a highlight from the floating button ----
-  async function startHighlight(fb: FloatBtn) {
-    const now = Date.now()
-    const h: Highlight = {
-      id: crypto.randomUUID(),
-      bookId,
-      cfi: fb.cfi,
-      text: fb.text,
-      note: '',
-      tag: undefined,
-      createdAt: now,
-      updatedAt: now,
-    }
-    highlightsRef.current = [...highlightsRef.current, h]
-    setHighlights(highlightsRef.current)
-    await saveHighlight(h)
-    // replace the gray pending mark with the real colored highlight (same cfi)
-    pendingCfiRef.current = null
-    try {
-      renditionRef.current?.annotations.remove(fb.cfi, 'highlight')
-    } catch {
-      /* ignore */
-    }
-    drawHighlight(h)
-    try {
-      fb.selDoc.getSelection()?.removeAllRanges()
-    } catch {
-      /* ignore */
-    }
-    openEditor({
-      highlightId: h.id,
-      text: h.text,
-      note: '',
-      tag: undefined,
-      anchor: fb.anchor,
-      autoFocus: true, // brand-new highlight: focus so the user types immediately
-    })
-  }
-
   async function handleEditorSave(note: string, tag: string | undefined) {
     if (!editor) return
     const list = highlightsRef.current
-    const idx = list.findIndex((x) => x.id === editor.highlightId)
-    if (idx === -1) {
-      setEditor(null)
-      return
+    if (editor.highlightId) {
+      // update an existing highlight
+      const idx = list.findIndex((x) => x.id === editor.highlightId)
+      if (idx === -1) {
+        setEditor(null)
+        return
+      }
+      const updated: Highlight = { ...list[idx], note, tag, updatedAt: Date.now() }
+      const next = [...list]
+      next[idx] = updated
+      highlightsRef.current = next
+      setHighlights(next)
+      await saveHighlight(updated)
+      removeHighlightDraw(updated.cfi) // re-draw with the (maybe changed) tag color
+      drawHighlight(updated)
+    } else {
+      // create a new highlight from the selection (empty note is allowed)
+      const now = Date.now()
+      const h: Highlight = {
+        id: crypto.randomUUID(),
+        bookId,
+        cfi: editor.cfi,
+        text: editor.text,
+        note,
+        tag,
+        createdAt: now,
+        updatedAt: now,
+      }
+      const next = [...list, h]
+      highlightsRef.current = next
+      setHighlights(next)
+      await saveHighlight(h)
+      drawHighlight(h)
     }
-    const updated: Highlight = { ...list[idx], note, tag, updatedAt: Date.now() }
-    const next = [...list]
-    next[idx] = updated
-    highlightsRef.current = next
-    setHighlights(next)
-    await saveHighlight(updated)
-    // re-draw so the color matches the (possibly changed) tag
-    removeHighlightDraw(updated.cfi)
-    drawHighlight(updated)
     setEditor(null)
   }
 
   async function handleEditorDelete() {
-    if (!editor) return
+    if (!editor?.highlightId) {
+      setEditor(null)
+      return
+    }
     const list = highlightsRef.current
     const h = list.find((x) => x.id === editor.highlightId)
     if (h) {
@@ -602,7 +551,6 @@ export default function Reader({
 
   function jumpToNote(h: Highlight) {
     setPanel(null)
-    setFloatBtn(null)
     setEditor(null)
     robustDisplay(h.cfi)
   }
@@ -652,25 +600,6 @@ export default function Reader({
       <div className="reader-stage" ref={stageRef} />
 
       <div className="reader-progress">{progress}</div>
-
-      {floatBtn && (
-        <button
-          className="float-btn"
-          style={{
-            left: Math.min(
-              Math.max(floatBtn.anchor.centerX, 80),
-              window.innerWidth - 80,
-            ),
-            top: Math.max(floatBtn.anchor.top - 8, 64),
-          }}
-          onClick={(e) => {
-            e.stopPropagation()
-            startHighlight(floatBtn)
-          }}
-        >
-          ✍️ 划线并写想法
-        </button>
-      )}
 
       {editor && (
         <>

@@ -4,12 +4,13 @@ import { placePopup } from '../lib/geometry'
 import { TAG_COLORS, TAGS } from '../lib/tags'
 
 export interface EditorTarget {
-  highlightId: string
+  highlightId?: string // present = editing an existing highlight; absent = new
+  cfi: string
   text: string
   note: string
   tag?: string
   anchor: AnchorRect
-  autoFocus?: boolean // focus the textarea (pops keyboard) — only when creating
+  autoFocus?: boolean
 }
 
 export default function HighlightEditor({
@@ -28,16 +29,13 @@ export default function HighlightEditor({
   const ref = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const isExisting = !!target.highlightId
 
-  // Position after first paint (need real measured size), then focus the input
-  // so the user can type immediately without moving their hand (PRD §3.4).
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     const rect = el.getBoundingClientRect()
     setPos(placePopup(target.anchor, rect.width, rect.height))
-    // focus + caret at end — only when creating a new highlight, so opening an
-    // existing one to read/edit doesn't pop the keyboard (PRD §3.4 vs editing)
     if (target.autoFocus) {
       const ta = textareaRef.current
       if (ta) {
@@ -47,7 +45,7 @@ export default function HighlightEditor({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target.highlightId])
+  }, [target.cfi])
 
   function toggleTag(t: string) {
     setTag((cur) => (cur === t ? undefined : t))
@@ -57,21 +55,16 @@ export default function HighlightEditor({
     <div
       ref={ref}
       className="editor"
-      style={
-        pos
-          ? { left: pos.left, top: pos.top }
-          : { left: -9999, top: -9999 } // pre-measure offscreen
-      }
+      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="editor-quote">{target.text}</div>
       <textarea
         ref={textareaRef}
         value={note}
-        placeholder="写下你对这段的想法…（可留空）"
+        placeholder="写下你的想法…"
         onChange={(e) => setNote(e.target.value)}
         onKeyDown={(e) => {
-          // Cmd/Ctrl+Enter to save quickly
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault()
             onSave(note.trim(), tag)
@@ -84,24 +77,32 @@ export default function HighlightEditor({
           <button
             key={t}
             className={'tag-chip' + (tag === t ? ' active' : '')}
+            style={
+              tag === t
+                ? { background: TAG_COLORS[t], borderColor: TAG_COLORS[t] }
+                : undefined
+            }
             onClick={() => toggleTag(t)}
             type="button"
           >
-            <span className="dot" style={{ background: TAG_COLORS[t] }} />
             {t}
           </button>
         ))}
       </div>
       <div className="editor-actions">
-        <button className="link-danger" onClick={onDelete} type="button">
-          删除划线
-        </button>
+        {isExisting ? (
+          <button className="link-danger" onClick={onDelete} type="button">
+            删除
+          </button>
+        ) : (
+          <span />
+        )}
         <div className="right">
-          <button className="btn btn-ghost" onClick={onCancel} type="button">
+          <button className="ios-btn" onClick={onCancel} type="button">
             取消
           </button>
           <button
-            className="btn btn-primary"
+            className="ios-btn primary"
             onClick={() => onSave(note.trim(), tag)}
             type="button"
           >

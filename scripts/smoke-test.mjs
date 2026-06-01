@@ -78,21 +78,18 @@ try {
     'continuous manager stacks chapters (infinite scroll)',
   )
 
-  // selection → floating highlight button
+  // selection → editor pops directly (no intermediate button)
   await dragSelectLine()
-  const floatVisible = await page.locator('.float-btn').isVisible().catch(() => false)
-  check(floatVisible, 'selection shows the “划线并写想法” button')
+  const editorVisible = await page
+    .locator('.editor textarea')
+    .isVisible()
+    .catch(() => false)
+  check(editorVisible, 'selection pops the editor directly (no button)')
 
-  if (floatVisible) {
-    await page.locator('.float-btn').click()
-    await page.locator('.editor textarea').waitFor({ timeout: 3000 })
-    const focused = await page.evaluate(
-      () => document.activeElement?.tagName === 'TEXTAREA',
-    )
-    check(focused, 'editor opens with textarea auto-focused')
+  if (editorVisible) {
     await page.locator('.editor textarea').fill('这是一个测试想法')
     await page.locator('.tag-chip', { hasText: '启发' }).click()
-    await page.locator('.editor .btn-primary', { hasText: '保存' }).click()
+    await page.locator('.editor .ios-btn.primary', { hasText: '保存' }).click()
     await page.waitForTimeout(400)
   }
 
