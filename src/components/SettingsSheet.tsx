@@ -177,6 +177,17 @@ export default function SettingsSheet({
         </div>
 
         <div className="sheet-row">
+          <span className="sheet-label">加粗</span>
+          <button
+            className={'toggle' + (settings.bold ? ' on' : '')}
+            onClick={() => onChange({ bold: !settings.bold })}
+            aria-pressed={settings.bold}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+
+        <div className="sheet-row">
           <span className="sheet-label">两端对齐</span>
           <button
             className={'toggle' + (settings.justify ? ' on' : '')}

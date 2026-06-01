@@ -11,6 +11,7 @@ export interface Settings {
   letterSpacing: number // em (character spacing)
   margin: number // horizontal page margin, percent of width
   justify: boolean // justify text vs. start-aligned
+  bold: boolean // heavier text weight
   fontFamily: FontKey
   brightness: number // night-mode text brightness, 50–100
   flow: FlowMode
@@ -94,6 +95,7 @@ export const DEFAULT_SETTINGS: Settings = {
   letterSpacing: 0,
   margin: 6,
   justify: false,
+  bold: false,
   fontFamily: 'sans',
   brightness: 92,
   flow: 'scrolled',

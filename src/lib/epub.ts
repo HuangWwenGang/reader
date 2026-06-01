@@ -70,6 +70,7 @@ export function themeRules(settings: Settings): object {
   const align = settings.justify ? 'justify' : 'start'
   const font = FONTS[settings.fontFamily]
   const fontRule = font ? { 'font-family': `${font} !important` } : {}
+  const weightRule = settings.bold ? { 'font-weight': '600 !important' } : {}
   return {
     html: { background: `${c.bg} !important` },
     body: {
@@ -81,6 +82,7 @@ export function themeRules(settings: Settings): object {
       'padding-left': `${settings.margin}% !important`,
       'padding-right': `${settings.margin}% !important`,
       ...fontRule,
+      ...weightRule,
     },
     'p, li, blockquote, dd, h1, h2, h3, h4, h5, h6, span, div, td, th': {
       color: `${ink} !important`,
@@ -90,6 +92,7 @@ export function themeRules(settings: Settings): object {
       'line-height': `${lh} !important`,
       'letter-spacing': `${ls} !important`,
       'text-align': `${align} !important`,
+      ...weightRule,
     },
     'a, a:link, a:visited': { color: `${c.link} !important` },
     '::selection': { background: 'rgba(140,140,140,0.4)' },
