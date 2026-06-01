@@ -38,6 +38,7 @@ button {
 /* ---------- Bookshelf ---------- */
 
 .shelf {
+  animation: shelfIn 0.28s ease both;
   max-width: 920px;
   margin: 0 auto;
   padding: max(16px, env(safe-area-inset-top)) 16px 40px;
@@ -102,6 +103,11 @@ button {
   gap: 8px;
   cursor: pointer;
   position: relative;
+  transition: transform 0.12s ease;
+}
+
+.book-card:active {
+  transform: scale(0.96);
 }
 
 .cover {
@@ -185,6 +191,7 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--paper);
+  animation: bookOpen 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .reader-bar {
@@ -323,6 +330,27 @@ button {
     transform: translateY(0);
   }
 }
+/* book open / shelf return transitions (more native feel) */
+@keyframes bookOpen {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes shelfIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .reader-stage.section-fade,
@@ -331,7 +359,9 @@ button {
   .panel,
   .panel-backdrop,
   .sheet,
-  .sheet-backdrop {
+  .sheet-backdrop,
+  .reader,
+  .shelf {
     animation: none !important;
   }
 }

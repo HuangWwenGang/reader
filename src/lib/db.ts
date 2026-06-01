@@ -57,6 +57,14 @@ export async function updateBookLocation(id: string, cfi: string): Promise<void>
   await db.put('books', book)
 }
 
+export async function saveBookLocations(id: string, json: string): Promise<void> {
+  const db = await getDB()
+  const book = await db.get('books', id)
+  if (!book) return
+  book.locations = json
+  await db.put('books', book)
+}
+
 // Delete a book and all of its highlights (PRD §3.2).
 export async function deleteBook(id: string): Promise<void> {
   const db = await getDB()

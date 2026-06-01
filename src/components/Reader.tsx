@@ -5,6 +5,7 @@ import {
   saveHighlight,
   deleteHighlight,
   updateBookLocation,
+  saveBookLocations,
 } from '../lib/db'
 import {
   getCFIComparator,
@@ -361,6 +362,48 @@ export default function Reader({
 
       lastCfiRef.current = rec.lastLocation
       await mountRendition(rec.lastLocation)
+
+      // Build (or load cached) the locations index so the bottom progress bar
+      // shows an accurate whole-book percentage. Deferred + cached so it doesn't
+      // jank the initial read and only runs once per book.
+      const refreshProgress = () => {
+        try {
+          const pct = renditionRef.current?.currentLocation?.()?.start?.percentage
+          if (typeof pct === 'number') {
+            const label = `${Math.round(pct * 100)}%`
+            lastProgRef.current = label
+            setProgress(label)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (rec.locations) {
+        try {
+          book.locations.load(rec.locations)
+          refreshProgress()
+        } catch {
+          /* ignore */
+        }
+      } else {
+        const gen = () => {
+          if (cancelled || !book.locations) return
+          Promise.resolve(book.locations.generate(1600))
+            .then(() => {
+              if (cancelled) return
+              try {
+                saveBookLocations(bookId, book.locations.save())
+              } catch {
+                /* ignore */
+              }
+              refreshProgress()
+            })
+            .catch(() => {})
+        }
+        const ric = (window as any).requestIdleCallback
+        if (typeof ric === 'function') ric(gen, { timeout: 4000 })
+        else window.setTimeout(gen, 1500)
+      }
     }
     setup().catch((e) => {
       console.error(e)
@@ -409,18 +452,34 @@ export default function Reader({
     setSettings((s) => ({ ...s, ...patch }))
   }, [])
 
-  // persist reading position when the app is backgrounded/closed (iOS PWA)
+  // Backgrounding (iOS PWA/Safari) can reflow the content and drift the scroll
+  // position on return. Capture the exact spot when hidden, and RE-APPLY it when
+  // we come back to the foreground so the paragraph stays put.
+  const resumeCfiRef = useRef<string | null>(null)
   useEffect(() => {
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') flushLocation()
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        resumeCfiRef.current = getPreciseCfi() ?? lastCfiRef.current ?? null
+        flushLocation()
+      } else {
+        const cfi = resumeCfiRef.current
+        if (cfi) {
+          // let layout settle after resume, then snap back exactly
+          window.setTimeout(() => {
+            renditionRef.current?.display(cfi).catch(() => {})
+          }, 250)
+        }
+      }
     }
-    document.addEventListener('visibilitychange', onHide)
+    document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pagehide', flushLocation)
+    window.addEventListener('pageshow', onVis)
     return () => {
-      document.removeEventListener('visibilitychange', onHide)
+      document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('pagehide', flushLocation)
+      window.removeEventListener('pageshow', onVis)
     }
-  }, [flushLocation])
+  }, [flushLocation, getPreciseCfi])
 
   // ---- create a highlight from the floating button ----
   async function startHighlight(fb: FloatBtn) {

@@ -10,6 +10,7 @@ export interface Book {
   cover?: ArrayBuffer | null
   file: ArrayBuffer // the epub file bytes
   lastLocation?: string // epub CFI, for restoring reading position
+  locations?: string // cached epub.js locations index (JSON), for accurate progress %
   createdAt: number
 }
 
