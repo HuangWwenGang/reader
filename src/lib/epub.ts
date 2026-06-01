@@ -96,6 +96,73 @@ export function themeRules(settings: Settings): object {
   }
 }
 
+// Reduce continuous-scroll stutter. By default epub.js DESTROYS each section as
+// soon as it scrolls off-screen, so scrolling back (or scrolling fast) reloads
+// it → blank flash. We override the manager to keep recently-read sections
+// rendered, only erasing ones far outside a window (±KEEP). Trades memory for
+// smoothness. Heavily guarded so a different epub.js build just falls back.
+export function tuneContinuous(rendition: any): void {
+  try {
+    const m = rendition?.manager
+    if (!m || typeof m.update !== 'function' || !m.views) return
+    const KEEP = 6
+    if (m.settings) m.settings.offset = 1200 // render a bit further ahead/behind
+
+    m.update = function (this: any, _offset?: number) {
+      const container = this.bounds()
+      const views = this.views.all()
+      const offset =
+        typeof _offset !== 'undefined' ? _offset : this.settings.offset || 0
+      const promises: any[] = []
+      for (const view of views) {
+        const isVisible = this.isVisible(view, offset, offset, container)
+        if (isVisible) {
+          if (!view.displayed) {
+            promises.push(
+              view.display(this.request).then(
+                (v: any) => v.show(),
+                () => view.hide(),
+              ),
+            )
+          } else {
+            view.show()
+          }
+        }
+        // NOTE: intentionally do NOT destroy non-visible views — keep them
+        // rendered so scrolling back is instant (no reload flash).
+      }
+      clearTimeout(this.trimTimeout)
+      this.trimTimeout = setTimeout(
+        () => this.q.enqueue(this.trim.bind(this)),
+        500,
+      )
+      return promises.length
+        ? Promise.all(promises).catch(() => {})
+        : Promise.resolve()
+    }
+
+    m.trim = function (this: any) {
+      const displayed = this.views.displayed()
+      if (!displayed.length) return Promise.resolve()
+      const all = this.views.all()
+      const first = this.views.indexOf(displayed[0])
+      const last = this.views.indexOf(displayed[displayed.length - 1])
+      for (let i = 0; i < all.length; i++) {
+        if (i < first - KEEP || i > last + KEEP) {
+          try {
+            this.erase(all[i])
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      return Promise.resolve()
+    }
+  } catch (e) {
+    console.warn('tuneContinuous failed (using default)', e)
+  }
+}
+
 let comparator: ((a: string, b: string) => number) | null = null
 export function getCFIComparator(): (a: string, b: string) => number {
   if (!comparator) {

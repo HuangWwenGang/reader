@@ -11,6 +11,7 @@ import {
   openBookFromBuffer,
   renderOptions,
   themeRules,
+  tuneContinuous,
   type Book,
 } from '../lib/epub'
 import { rangeToAnchor, type AnchorRect } from '../lib/geometry'
@@ -254,6 +255,8 @@ export default function Reader({
     })
 
     await rendition.display(startCfi || undefined)
+    // keep recently-read sections alive in scroll mode (smoother fast-scroll)
+    if (settingsRef.current.flow === 'scrolled') tuneContinuous(rendition)
     for (const h of highlightsRef.current) drawHighlight(h)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, drawHighlight])
