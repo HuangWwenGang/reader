@@ -48,6 +48,9 @@ export default function Reader({
   // set true (synchronously) when a click lands on an existing highlight, so the
   // deferred page-turn for that same click is cancelled (avoids edge-tap conflict)
   const annotationHitRef = useRef(false)
+  // throttle + count for cross-section auto-advance / section-change fade
+  const edgeAdvanceRef = useRef(0)
+  const loadCountRef = useRef(0)
 
   const [book, setBook] = useState<Book | null>(null)
   const [toc, setToc] = useState<TocItem[]>([])
@@ -126,6 +129,7 @@ export default function Reader({
       view.addEventListener('show-annotation', onShowAnnotation)
 
       view.renderer.setAttribute('flow', settingsRef.current.flow)
+      view.renderer.setAttribute('animated', '') // smooth page-turn / snap
       view.renderer.setStyles?.(getReaderCSS(settingsRef.current))
       setToc(view.book?.toc ?? [])
 
@@ -169,6 +173,69 @@ export default function Reader({
       })
       doc.addEventListener('pointerup', () => handleSelection(doc, index))
       doc.addEventListener('click', (ev: MouseEvent) => handlePageClick(doc, ev))
+
+      // Continuous reading in scroll mode: foliate renders one chapter at a
+      // time, so native scrolling hits a wall at the chapter end. When the user
+      // pushes past the section boundary, call next()/prev() — which auto-loads
+      // the adjacent chapter — so it feels continuous instead of manual.
+      doc.addEventListener(
+        'wheel',
+        (ev: WheelEvent) => {
+          if (ev.deltaY > 0) tryEdgeAdvance(doc, 'down')
+          else if (ev.deltaY < 0) tryEdgeAdvance(doc, 'up')
+        },
+        { passive: true },
+      )
+      let touchY: number | null = null
+      doc.addEventListener(
+        'touchstart',
+        (ev: TouchEvent) => {
+          touchY = ev.touches[0]?.clientY ?? null
+        },
+        { passive: true },
+      )
+      doc.addEventListener(
+        'touchmove',
+        (ev: TouchEvent) => {
+          if (touchY == null) return
+          const dy = touchY - (ev.touches[0]?.clientY ?? touchY)
+          if (dy > 24) tryEdgeAdvance(doc, 'down')
+          else if (dy < -24) tryEdgeAdvance(doc, 'up')
+        },
+        { passive: true },
+      )
+
+      // subtle fade when a *new* section swaps in (smooths the chapter change)
+      const stage = stageRef.current
+      if (stage && loadCountRef.current > 0) {
+        stage.classList.remove('section-fade')
+        void stage.offsetWidth // force reflow to restart the animation
+        stage.classList.add('section-fade')
+      }
+      loadCountRef.current++
+    }
+
+    function tryEdgeAdvance(doc: Document, dir: 'down' | 'up') {
+      if (settingsRef.current.flow !== 'scrolled') return
+      const sel = doc.getSelection()
+      if (sel && !sel.isCollapsed) return // don't advance mid-selection
+      const now = Date.now()
+      if (now - edgeAdvanceRef.current < 700) return
+      const frameEl = doc.defaultView?.frameElement as HTMLElement | null
+      const stage = stageRef.current
+      if (!frameEl || !stage) return
+      const fr = frameEl.getBoundingClientRect()
+      const st = stage.getBoundingClientRect()
+      const T = 4
+      // the iframe holds one full chapter; its bottom/top edge entering the
+      // reading area means we're at the chapter's end/start
+      if (dir === 'down' && fr.bottom <= st.bottom + T) {
+        edgeAdvanceRef.current = now
+        view.next()
+      } else if (dir === 'up' && fr.top >= st.top - T) {
+        edgeAdvanceRef.current = now
+        view.prev()
+      }
     }
 
     function handleSelection(doc: Document, index: number) {
