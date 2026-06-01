@@ -59,24 +59,65 @@ export default function Reader({
 
   // flush the pending reading position immediately (e.g. on exit) so re-opening
   // lands exactly where we left off instead of drifting
+  // Line-level position: epub.js's currentLocation() snaps to the *start of the
+  // topmost element* (paragraph-level). To restore to the exact line like native
+  // readers, we find the character at the very top of the visible reading area
+  // via caretRangeFromPoint and take its CFI.
+  const getPreciseCfi = useCallback((): string | undefined => {
+    const r = renditionRef.current
+    const stage = stageRef.current
+    if (!r || !stage) return undefined
+    let list: any[] = []
+    try {
+      const c = r.getContents()
+      list = Array.isArray(c) ? c : c ? [c] : []
+    } catch {
+      return undefined
+    }
+    const st = stage.getBoundingClientRect()
+    const probeY = st.top + 4 // just inside the top edge of the reading area
+    for (const contents of list) {
+      const doc: Document | undefined = contents?.document
+      const frameEl = doc?.defaultView?.frameElement as HTMLElement | null
+      if (!doc || !frameEl) continue
+      const fr = frameEl.getBoundingClientRect()
+      if (fr.top - 1 <= probeY && fr.bottom >= probeY) {
+        const localX = Math.max(2, st.left + st.width / 2 - fr.left)
+        const localY = probeY - fr.top
+        try {
+          const range = (doc as any).caretRangeFromPoint?.(localX, localY)
+          if (range) {
+            const cfi = contents.cfiFromRange(range)
+            if (cfi) return cfi
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return undefined
+  }, [])
+
   const flushLocation = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    // prefer the LIVE position over the (possibly stale) last 'relocated' cfi
-    let cfi = lastCfiRef.current
-    try {
-      const loc = renditionRef.current?.currentLocation?.()
-      if (loc?.start?.cfi) cfi = loc.start.cfi
-    } catch {
-      /* ignore */
+    // prefer line-precise position, then live currentLocation, then last cfi
+    let cfi = getPreciseCfi() ?? lastCfiRef.current
+    if (!cfi) {
+      try {
+        const loc = renditionRef.current?.currentLocation?.()
+        if (loc?.start?.cfi) cfi = loc.start.cfi
+      } catch {
+        /* ignore */
+      }
     }
     if (cfi) {
       lastCfiRef.current = cfi
       updateBookLocation(bookId, cfi).catch(() => {})
     }
-  }, [bookId])
+  }, [bookId, getPreciseCfi])
 
   const [title, setTitle] = useState('')
   const [toc, setToc] = useState<TocItem[]>([])
@@ -177,12 +218,14 @@ export default function Reader({
     rendition.themes.fontSize(`${settingsRef.current.fontScale}%`)
 
     rendition.on('relocated', (location: any) => {
-      const cfi = location?.start?.cfi
+      // save the line-precise cfi when we can, else the element-level one
+      const cfi = getPreciseCfi() ?? location?.start?.cfi
       if (cfi) {
         lastCfiRef.current = cfi
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+        const toSave = cfi
         saveTimerRef.current = window.setTimeout(() => {
-          updateBookLocation(bookId, cfi).catch(console.error)
+          updateBookLocation(bookId, toSave).catch(console.error)
         }, 250)
       }
       const pct = location?.start?.percentage
