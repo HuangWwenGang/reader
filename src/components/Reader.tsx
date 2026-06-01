@@ -48,6 +48,26 @@ export default function Reader({
   const saveTimerRef = useRef<number | null>(null)
   const lastCfiRef = useRef<string | undefined>(undefined)
   const lastProgRef = useRef<string>('')
+  // timestamp the editor opened, to ignore the ghost-click that opened it
+  const editorOpenedRef = useRef(0)
+
+  const openEditor = useCallback((t: EditorTarget) => {
+    editorOpenedRef.current = Date.now()
+    setFloatBtn(null)
+    setEditor(t)
+  }, [])
+
+  // flush the pending reading position immediately (e.g. on exit) so re-opening
+  // lands exactly where we left off instead of drifting
+  const flushLocation = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    if (lastCfiRef.current) {
+      updateBookLocation(bookId, lastCfiRef.current).catch(() => {})
+    }
+  }, [bookId])
 
   const [title, setTitle] = useState('')
   const [toc, setToc] = useState<TocItem[]>([])
@@ -115,14 +135,14 @@ export default function Reader({
         bottom: window.innerHeight / 2,
       }
     }
-    setFloatBtn(null)
-    setEditor({
+    openEditor({
       highlightId: h.id,
       text: h.text,
       note: h.note ?? '',
       tag: h.tag,
       anchor,
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ---- mount / remount the rendition ----
@@ -152,7 +172,7 @@ export default function Reader({
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
         saveTimerRef.current = window.setTimeout(() => {
           updateBookLocation(bookId, cfi).catch(console.error)
-        }, 500)
+        }, 250)
       }
       const pct = location?.start?.percentage
       if (typeof pct === 'number') {
@@ -232,7 +252,7 @@ export default function Reader({
     })
     return () => {
       cancelled = true
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      flushLocation() // save exact position before tearing down (avoids drift)
       try {
         renditionRef.current?.destroy()
       } catch {
@@ -273,6 +293,19 @@ export default function Reader({
     setSettings((s) => ({ ...s, ...patch }))
   }, [])
 
+  // persist reading position when the app is backgrounded/closed (iOS PWA)
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushLocation()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', flushLocation)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', flushLocation)
+    }
+  }, [flushLocation])
+
   // ---- create a highlight from the floating button ----
   async function startHighlight(fb: FloatBtn) {
     const now = Date.now()
@@ -295,8 +328,7 @@ export default function Reader({
     } catch {
       /* ignore */
     }
-    setFloatBtn(null)
-    setEditor({
+    openEditor({
       highlightId: h.id,
       text: h.text,
       note: '',
@@ -420,7 +452,14 @@ export default function Reader({
 
       {editor && (
         <>
-          <div className="editor-backdrop" onClick={() => setEditor(null)} />
+          <div
+            className="editor-backdrop"
+            onClick={() => {
+              // ignore the same tap that opened the editor (iOS ghost click)
+              if (Date.now() - editorOpenedRef.current < 400) return
+              setEditor(null)
+            }}
+          />
           <HighlightEditor
             target={editor}
             onSave={handleEditorSave}

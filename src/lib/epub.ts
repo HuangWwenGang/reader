@@ -4,7 +4,7 @@
 import ePub, { Book, EpubCFI } from 'epubjs'
 import type { RenditionOptions } from 'epubjs/types/rendition'
 import type { Settings } from './settings'
-import { THEMES } from './settings'
+import { FONTS, THEMES } from './settings'
 
 export type { Book }
 
@@ -64,19 +64,33 @@ export function renderOptions(settings: Settings): RenditionOptions {
 export function themeRules(settings: Settings): object {
   const c = THEMES[settings.theme]
   const lh = String(settings.lineHeight)
+  const ls = `${settings.letterSpacing}em`
+  const align = settings.justify ? 'justify' : 'start'
+  const font = FONTS[settings.fontFamily]
+  const fontRule = font ? { 'font-family': `${font} !important` } : {}
   return {
     html: { background: `${c.bg} !important` },
     body: {
       background: `${c.bg} !important`,
       color: `${c.ink} !important`,
       'line-height': `${lh} !important`,
+      'letter-spacing': `${ls} !important`,
+      // horizontal reading margin
+      'padding-left': `${settings.margin}% !important`,
+      'padding-right': `${settings.margin}% !important`,
+      ...fontRule,
     },
     'p, li, blockquote, dd, h1, h2, h3, h4, h5, h6, span, div, td, th': {
       color: `${c.ink} !important`,
+      ...fontRule,
     },
-    'p, li, blockquote, dd': { 'line-height': `${lh} !important` },
+    'p, li, blockquote, dd': {
+      'line-height': `${lh} !important`,
+      'letter-spacing': `${ls} !important`,
+      'text-align': `${align} !important`,
+    },
     'a, a:link, a:visited': { color: `${c.link} !important` },
-    '::selection': { background: 'rgba(127,127,127,0.35)' },
+    '::selection': { background: 'rgba(140,140,140,0.4)' },
   }
 }
 

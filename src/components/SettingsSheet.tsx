@@ -1,12 +1,37 @@
 import {
+  FONT_LABELS,
   THEME_LABELS,
   THEMES,
   type FlowMode,
+  type FontKey,
   type Settings,
   type ThemeName,
 } from '../lib/settings'
 
 const THEME_ORDER: ThemeName[] = ['paper', 'sepia', 'night']
+const FONT_ORDER: FontKey[] = ['default', 'sans', 'serif']
+
+function Stepper({
+  value,
+  onDec,
+  onInc,
+  dec = '−',
+  inc = '+',
+}: {
+  value: string
+  onDec: () => void
+  onInc: () => void
+  dec?: string
+  inc?: string
+}) {
+  return (
+    <div className="stepper">
+      <button onClick={onDec}>{dec}</button>
+      <span className="stepper-value">{value}</span>
+      <button onClick={onInc}>{inc}</button>
+    </div>
+  )
+}
 
 export default function SettingsSheet({
   settings,
@@ -49,6 +74,21 @@ export default function SettingsSheet({
         </div>
 
         <div className="sheet-row">
+          <span className="sheet-label">字体</span>
+          <div className="seg">
+            {FONT_ORDER.map((f) => (
+              <button
+                key={f}
+                className={'seg-btn' + (settings.fontFamily === f ? ' active' : '')}
+                onClick={() => onChange({ fontFamily: f })}
+              >
+                {FONT_LABELS[f]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="sheet-row">
           <span className="sheet-label">排版</span>
           <div className="seg">
             {(['scrolled', 'paginated'] as FlowMode[]).map((f) => (
@@ -65,48 +105,71 @@ export default function SettingsSheet({
 
         <div className="sheet-row">
           <span className="sheet-label">字号</span>
-          <div className="stepper">
-            <button
-              onClick={() =>
-                onChange({ fontScale: Math.max(70, settings.fontScale - 10) })
-              }
-            >
-              A−
-            </button>
-            <span className="stepper-value">{settings.fontScale}%</span>
-            <button
-              onClick={() =>
-                onChange({ fontScale: Math.min(220, settings.fontScale + 10) })
-              }
-            >
-              A+
-            </button>
-          </div>
+          <Stepper
+            value={`${settings.fontScale}%`}
+            dec="A−"
+            inc="A+"
+            onDec={() =>
+              onChange({ fontScale: Math.max(70, settings.fontScale - 10) })
+            }
+            onInc={() =>
+              onChange({ fontScale: Math.min(240, settings.fontScale + 10) })
+            }
+          />
         </div>
 
         <div className="sheet-row">
           <span className="sheet-label">行距</span>
-          <div className="stepper">
-            <button
-              onClick={() =>
-                onChange({
-                  lineHeight: Math.max(1.2, +(settings.lineHeight - 0.1).toFixed(1)),
-                })
-              }
-            >
-              −
-            </button>
-            <span className="stepper-value">{settings.lineHeight.toFixed(1)}</span>
-            <button
-              onClick={() =>
-                onChange({
-                  lineHeight: Math.min(2.4, +(settings.lineHeight + 0.1).toFixed(1)),
-                })
-              }
-            >
-              +
-            </button>
-          </div>
+          <Stepper
+            value={settings.lineHeight.toFixed(1)}
+            onDec={() =>
+              onChange({
+                lineHeight: Math.max(1.2, +(settings.lineHeight - 0.1).toFixed(1)),
+              })
+            }
+            onInc={() =>
+              onChange({
+                lineHeight: Math.min(2.6, +(settings.lineHeight + 0.1).toFixed(1)),
+              })
+            }
+          />
+        </div>
+
+        <div className="sheet-row">
+          <span className="sheet-label">字间距</span>
+          <Stepper
+            value={`${Math.round(settings.letterSpacing * 100)}%`}
+            onDec={() =>
+              onChange({
+                letterSpacing: Math.max(0, +(settings.letterSpacing - 0.01).toFixed(2)),
+              })
+            }
+            onInc={() =>
+              onChange({
+                letterSpacing: Math.min(0.2, +(settings.letterSpacing + 0.01).toFixed(2)),
+              })
+            }
+          />
+        </div>
+
+        <div className="sheet-row">
+          <span className="sheet-label">页边距</span>
+          <Stepper
+            value={`${settings.margin}%`}
+            onDec={() => onChange({ margin: Math.max(0, settings.margin - 2) })}
+            onInc={() => onChange({ margin: Math.min(20, settings.margin + 2) })}
+          />
+        </div>
+
+        <div className="sheet-row">
+          <span className="sheet-label">两端对齐</span>
+          <button
+            className={'toggle' + (settings.justify ? ' on' : '')}
+            onClick={() => onChange({ justify: !settings.justify })}
+            aria-pressed={settings.justify}
+          >
+            <span className="toggle-knob" />
+          </button>
         </div>
       </div>
     </>

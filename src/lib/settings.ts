@@ -2,12 +2,30 @@
 
 export type ThemeName = 'paper' | 'sepia' | 'night'
 export type FlowMode = 'scrolled' | 'paginated'
+export type FontKey = 'default' | 'sans' | 'serif'
 
 export interface Settings {
   theme: ThemeName
   fontScale: number // percent of base font size
   lineHeight: number
+  letterSpacing: number // em (character spacing)
+  margin: number // horizontal page margin, percent of width
+  justify: boolean // justify text vs. start-aligned
+  fontFamily: FontKey
   flow: FlowMode
+}
+
+// Font stacks for the book content.
+export const FONTS: Record<FontKey, string> = {
+  default: '', // keep the book's own fonts
+  sans: '-apple-system, "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif',
+  serif: 'Georgia, "Songti SC", "SimSun", "Noto Serif CJK SC", serif',
+}
+
+export const FONT_LABELS: Record<FontKey, string> = {
+  default: '默认',
+  sans: '黑体',
+  serif: '宋体',
 }
 
 export interface ThemeColors {
@@ -41,14 +59,16 @@ export const THEMES: Record<ThemeName, ThemeColors> = {
     accent: '#a07b46',
     link: '#9a5b34',
   },
+  // Deep true-black with bright text, like iOS Books' night mode — crisp,
+  // high-contrast, comfortable on OLED.
   night: {
-    bg: '#16161a',
-    ink: '#cdc9c2',
-    muted: '#7d7a73',
-    line: '#2c2c33',
-    card: '#202027',
-    accent: '#b8a890',
-    link: '#9db7d6',
+    bg: '#000000',
+    ink: '#e9e7e2',
+    muted: '#7b7b7b',
+    line: '#222222',
+    card: '#141414',
+    accent: '#cbb791',
+    link: '#a9c2e3',
   },
 }
 
@@ -61,7 +81,11 @@ export const THEME_LABELS: Record<ThemeName, string> = {
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'night',
   fontScale: 110,
-  lineHeight: 1.7,
+  lineHeight: 1.6,
+  letterSpacing: 0,
+  margin: 6,
+  justify: false,
+  fontFamily: 'sans',
   flow: 'scrolled',
 }
 
