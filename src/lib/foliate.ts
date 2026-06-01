@@ -98,16 +98,34 @@ export async function getCFIComparator(): Promise<
   }
 }
 
-// CSS injected into each book's iframe document. Kept minimal and reading-focused.
-export function getReaderCSS(): string {
+// CSS injected into each book's iframe document. We explicitly paint the
+// background + text color from the chosen theme and force `color-scheme: light`
+// so the book content NEVER follows the OS dark mode independently of the app
+// chrome (that was the black-on-cream clash). Font size / line height / flow are
+// all driven from user settings.
+import type { Settings } from './settings'
+import { THEMES } from './settings'
+
+export function getReaderCSS(settings: Settings): string {
+  const c = THEMES[settings.theme]
   return `
     @namespace epub "http://www.idpf.org/2007/ops";
-    html { color-scheme: light dark; }
-    @media (prefers-color-scheme: dark) {
-      a:link { color: lightblue; }
+    html {
+      color-scheme: light;
+      background: ${c.bg} !important;
+      color: ${c.ink} !important;
+      font-size: ${settings.fontScale}%;
     }
+    body {
+      background: ${c.bg} !important;
+      color: ${c.ink} !important;
+    }
+    p, li, blockquote, dd, h1, h2, h3, h4, h5, h6, span, div, td, th {
+      color: ${c.ink};
+    }
+    a:link, a:visited { color: ${c.link}; }
     p, li, blockquote, dd {
-      line-height: 1.6;
+      line-height: ${settings.lineHeight};
       text-align: justify;
       -webkit-hyphens: auto;
       hyphens: auto;

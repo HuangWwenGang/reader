@@ -14,10 +14,17 @@ import {
 } from '../lib/foliate'
 import { rangeToAnchor, type AnchorRect } from '../lib/geometry'
 import { colorForTag } from '../lib/tags'
+import {
+  applyTheme,
+  loadSettings,
+  saveSettings,
+  type Settings,
+} from '../lib/settings'
 import type { Book, Highlight } from '../lib/types'
 import HighlightEditor, { type EditorTarget } from './HighlightEditor'
 import TocPanel, { type TocItem } from './TocPanel'
 import NotesPanel from './NotesPanel'
+import SettingsSheet from './SettingsSheet'
 
 interface FloatBtn {
   anchor: AnchorRect
@@ -50,6 +57,9 @@ export default function Reader({
   const [editor, setEditor] = useState<EditorTarget | null>(null)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [settings, setSettings] = useState<Settings>(() => loadSettings())
+  const [showSettings, setShowSettings] = useState(false)
+  const settingsRef = useRef(settings)
 
   // keep ref mirror for use inside iframe/foliate event callbacks (stale closures)
   useEffect(() => {
@@ -58,6 +68,22 @@ export default function Reader({
   useEffect(() => {
     popupOpenRef.current = floatBtn != null || editor != null
   }, [floatBtn, editor])
+
+  // apply settings live: theme to chrome, flow + styles to the book
+  useEffect(() => {
+    settingsRef.current = settings
+    saveSettings(settings)
+    applyTheme(settings.theme)
+    const view = viewRef.current
+    if (view?.renderer) {
+      view.renderer.setAttribute('flow', settings.flow)
+      view.renderer.setStyles?.(getReaderCSS(settings))
+    }
+  }, [settings])
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setSettings((s) => ({ ...s, ...patch }))
+  }, [])
 
   const closePopups = useCallback(() => {
     setFloatBtn(null)
@@ -99,7 +125,8 @@ export default function Reader({
       view.addEventListener('create-overlay', onCreateOverlay)
       view.addEventListener('show-annotation', onShowAnnotation)
 
-      view.renderer.setStyles?.(getReaderCSS())
+      view.renderer.setAttribute('flow', settingsRef.current.flow)
+      view.renderer.setStyles?.(getReaderCSS(settingsRef.current))
       setToc(view.book?.toc ?? [])
 
       const hs = await getHighlights(bookId)
@@ -132,22 +159,27 @@ export default function Reader({
 
     function onLoad(e: any) {
       const { doc, index } = e.detail
+      // Detect selection via `selectionchange` (works for finger/Pencil text
+      // selection on touch, where there's no reliable "selection finished"
+      // event). Debounced so the button appears once the selection settles.
+      let selTimer: number | undefined
+      doc.addEventListener('selectionchange', () => {
+        clearTimeout(selTimer)
+        selTimer = window.setTimeout(() => handleSelection(doc, index), 220)
+      })
       doc.addEventListener('pointerup', () => handleSelection(doc, index))
       doc.addEventListener('click', (ev: MouseEvent) => handlePageClick(doc, ev))
     }
 
     function handleSelection(doc: Document, index: number) {
       const sel = doc.getSelection()
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        setFloatBtn(null)
-        return
-      }
+      // Only ever SHOW on a valid selection — never hide here. The button is
+      // dismissed explicitly (tap content, turn page, scroll, open editor), so a
+      // tap on the button can't race a "selection collapsed" hide.
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return
       const range = sel.getRangeAt(0)
       const text = sel.toString().trim()
-      if (!text) {
-        setFloatBtn(null)
-        return
-      }
+      if (!text) return
       const cfi = view.getCFI(index, range)
       const anchor = rangeToAnchor(doc, range)
       if (!anchor) return
@@ -161,6 +193,8 @@ export default function Reader({
         closePopups()
         return
       }
+      // tap-to-turn only in paginated mode; scroll mode scrolls instead
+      if (settingsRef.current.flow !== 'paginated') return
       const target = ev.target as HTMLElement
       if (target?.closest?.('a[href]')) return // let foliate handle links
       const w = doc.defaultView?.innerWidth ?? window.innerWidth
@@ -367,6 +401,13 @@ export default function Reader({
         <div className="spacer" />
         <button
           className="icon-btn"
+          onClick={() => setShowSettings(true)}
+          title="显示设置"
+        >
+          Aa
+        </button>
+        <button
+          className="icon-btn"
           onClick={() => setPanel('notes')}
           title="笔记"
         >
@@ -414,6 +455,14 @@ export default function Reader({
           highlights={sortedNotes}
           onJump={jumpToNote}
           onClose={() => setPanel(null)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsSheet
+          settings={settings}
+          onChange={updateSettings}
+          onClose={() => setShowSettings(false)}
         />
       )}
     </div>

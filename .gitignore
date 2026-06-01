@@ -3,4 +3,5 @@ dist
 dist-ssr
 _foliate-src
 *.local
+*.tsbuildinfo
 .DS_Store

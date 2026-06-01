@@ -34,6 +34,19 @@ try {
 
   // --- create one highlight so later steps have data to work with ---
   await openBook()
+
+  // switch to 左右翻页 via the new settings sheet (also exercises settings UI);
+  // paginated columns make the later "click the highlight" check deterministic
+  await page.locator('.reader-bar .icon-btn', { hasText: 'Aa' }).click()
+  await page.locator('.seg-btn', { hasText: '左右翻页' }).click()
+  const flowOk = await page
+    .locator('.seg-btn.active', { hasText: '左右翻页' })
+    .isVisible()
+    .catch(() => false)
+  check(flowOk, 'settings sheet switches layout to 左右翻页')
+  await page.locator('.sheet-backdrop').click()
+  await page.waitForTimeout(900)
+
   {
     const box = await page.locator('.reader-stage').boundingBox()
     const y = box.y + box.height * 0.45
@@ -50,15 +63,18 @@ try {
     await page.waitForTimeout(400)
   }
 
-  // --- edit an existing highlight: click it, editor should reopen ---
+  // --- edit an existing highlight: click on the highlighted text, editor reopens ---
   {
     const box = await page.locator('.reader-stage').boundingBox()
-    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.45)
-    await page.waitForTimeout(400)
-    const reopened = await page
-      .locator('.editor textarea')
-      .isVisible()
-      .catch(() => false)
+    let reopened = false
+    // the selection snaps to the nearest line, so the highlight sits slightly
+    // above the drag-release point — scan a few y offsets to land on it
+    for (const fy of [0.42, 0.4, 0.44, 0.38, 0.46]) {
+      await page.mouse.click(box.x + box.width * 0.35, box.y + box.height * fy)
+      await page.waitForTimeout(250)
+      reopened = await page.locator('.editor textarea').isVisible().catch(() => false)
+      if (reopened) break
+    }
     check(reopened, 'clicking an existing highlight reopens the editor (acceptance #6)')
     if (reopened) {
       await page.keyboard.press('Escape')
