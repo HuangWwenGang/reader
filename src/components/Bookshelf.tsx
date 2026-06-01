@@ -163,6 +163,10 @@ export default function Bookshelf({
         </div>
       )}
 
+      <div className="build-badge">
+        版本 {__APP_VERSION__.length > 16 ? __APP_VERSION__.slice(0, 7) : __APP_VERSION__}
+      </div>
+
       {toast && <div className="toast">{toast}</div>}
     </div>
   )

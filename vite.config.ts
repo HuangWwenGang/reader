@@ -6,9 +6,18 @@ import { VitePWA } from 'vite-plugin-pwa'
 // workflow passes VITE_BASE=/<repo>/. Locally (dev/preview/tests) it stays '/'.
 const base = process.env.VITE_BASE || '/'
 
+// A short build id shown in the UI so it's obvious which version is loaded
+// (helps diagnose stale service-worker caches). CI passes the git short SHA.
+const buildId =
+  process.env.VITE_BUILD ||
+  new Date().toISOString().replace('T', ' ').slice(0, 16)
+
 // https://vitejs.dev/config/
 export default defineConfig({
   base,
+  define: {
+    __APP_VERSION__: JSON.stringify(buildId),
+  },
   plugins: [
     react(),
     VitePWA({

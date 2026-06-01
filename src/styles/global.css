@@ -169,6 +169,14 @@ button {
   line-height: 1.7;
 }
 
+.build-badge {
+  margin-top: 36px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
 /* ---------- Reader ---------- */
 
 .reader {

@@ -29,6 +29,7 @@ jobs:
         # base auto-derives from the repo name, so /<owner>.github.io/<repo>/ works
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_BUILD: ${{ github.sha }}
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
