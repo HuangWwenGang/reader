@@ -233,10 +233,16 @@ button {
   min-height: 0;
 }
 
-foliate-view {
-  display: block;
-  width: 100%;
+/* epub.js renders its scroller/iframes into the stage */
+.reader-stage > div {
   height: 100%;
+}
+
+.editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: transparent;
 }
 
 /* subtle fade when a new chapter swaps in (scroll-mode continuous reading) */

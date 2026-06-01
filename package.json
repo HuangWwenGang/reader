@@ -9,9 +9,10 @@
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
     "sample": "node scripts/make-sample-epub.mjs",
-    "test:smoke": "node scripts/smoke-test.mjs && node scripts/smoke-test-2.mjs"
+    "test:smoke": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
+    "epubjs": "^0.3.93",
     "idb": "^8.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

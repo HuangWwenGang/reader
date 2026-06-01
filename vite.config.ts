@@ -22,8 +22,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // foliate-js lives in /public and is loaded as raw ES modules at runtime.
-      includeAssets: ['icons/*', 'foliate-js/**/*'],
+      includeAssets: ['icons/*'],
       manifest: {
         name: '阅读器',
         short_name: '阅读器',
@@ -49,10 +48,9 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App shell + all foliate-js modules + book assets get precached so the
-        // app (and already-imported books, whose data is in IndexedDB) work offline.
+        // Precache the app shell so it works offline (book data is in IndexedDB).
         globPatterns: ['**/*.{js,css,html,svg,png,json,woff2}'],
-        // foliate-js can be large; raise the limit so its vendor bundles precache.
+        // the epub.js bundle is sizable; raise the limit so it precaches.
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: base + 'index.html',
         cleanupOutdatedCaches: true,

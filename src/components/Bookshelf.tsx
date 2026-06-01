@@ -5,7 +5,7 @@ import {
   exportAllData,
   getBooks,
 } from '../lib/db'
-import { extractMeta } from '../lib/foliate'
+import { extractMeta } from '../lib/epub'
 import type { Book } from '../lib/types'
 
 function CoverImage({ book }: { book: Book }) {
