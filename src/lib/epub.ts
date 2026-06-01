@@ -4,7 +4,7 @@
 import ePub, { Book, EpubCFI } from 'epubjs'
 import type { RenditionOptions } from 'epubjs/types/rendition'
 import type { Settings } from './settings'
-import { FONTS, THEMES } from './settings'
+import { FONTS, THEMES, nightInk } from './settings'
 
 export type { Book }
 
@@ -63,6 +63,8 @@ export function renderOptions(settings: Settings): RenditionOptions {
 // chrome (and never follows OS dark mode on its own).
 export function themeRules(settings: Settings): object {
   const c = THEMES[settings.theme]
+  // night text brightness is user-adjustable
+  const ink = settings.theme === 'night' ? nightInk(settings.brightness) : c.ink
   const lh = String(settings.lineHeight)
   const ls = `${settings.letterSpacing}em`
   const align = settings.justify ? 'justify' : 'start'
@@ -72,7 +74,7 @@ export function themeRules(settings: Settings): object {
     html: { background: `${c.bg} !important` },
     body: {
       background: `${c.bg} !important`,
-      color: `${c.ink} !important`,
+      color: `${ink} !important`,
       'line-height': `${lh} !important`,
       'letter-spacing': `${ls} !important`,
       // horizontal reading margin
@@ -81,7 +83,7 @@ export function themeRules(settings: Settings): object {
       ...fontRule,
     },
     'p, li, blockquote, dd, h1, h2, h3, h4, h5, h6, span, div, td, th': {
-      color: `${c.ink} !important`,
+      color: `${ink} !important`,
       ...fontRule,
     },
     'p, li, blockquote, dd': {

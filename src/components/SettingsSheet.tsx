@@ -103,6 +103,21 @@ export default function SettingsSheet({
           </div>
         </div>
 
+        {settings.theme === 'night' && (
+          <div className="sheet-row">
+            <span className="sheet-label">亮度</span>
+            <Stepper
+              value={`${settings.brightness}`}
+              onDec={() =>
+                onChange({ brightness: Math.max(50, settings.brightness - 4) })
+              }
+              onInc={() =>
+                onChange({ brightness: Math.min(100, settings.brightness + 4) })
+              }
+            />
+          </div>
+        )}
+
         <div className="sheet-row">
           <span className="sheet-label">字号</span>
           <Stepper

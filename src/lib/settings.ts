@@ -12,7 +12,16 @@ export interface Settings {
   margin: number // horizontal page margin, percent of width
   justify: boolean // justify text vs. start-aligned
   fontFamily: FontKey
+  brightness: number // night-mode text brightness, 50–100
   flow: FlowMode
+}
+
+// Night-mode text color from a brightness level (50 = soft gray, 100 = pure white).
+export function nightInk(brightness: number): string {
+  const b = Math.max(50, Math.min(100, brightness))
+  const v = Math.round(140 + ((255 - 140) * (b - 50)) / 50)
+  const h = v.toString(16).padStart(2, '0')
+  return `#${h}${h}${h}`
 }
 
 // Font stacks for the book content.
@@ -86,6 +95,7 @@ export const DEFAULT_SETTINGS: Settings = {
   margin: 6,
   justify: false,
   fontFamily: 'sans',
+  brightness: 92,
   flow: 'scrolled',
 }
 

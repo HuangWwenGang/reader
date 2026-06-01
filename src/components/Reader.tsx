@@ -64,8 +64,17 @@ export default function Reader({
       clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    if (lastCfiRef.current) {
-      updateBookLocation(bookId, lastCfiRef.current).catch(() => {})
+    // prefer the LIVE position over the (possibly stale) last 'relocated' cfi
+    let cfi = lastCfiRef.current
+    try {
+      const loc = renditionRef.current?.currentLocation?.()
+      if (loc?.start?.cfi) cfi = loc.start.cfi
+    } catch {
+      /* ignore */
+    }
+    if (cfi) {
+      lastCfiRef.current = cfi
+      updateBookLocation(bookId, cfi).catch(() => {})
     }
   }, [bookId])
 
@@ -141,6 +150,7 @@ export default function Reader({
       note: h.note ?? '',
       tag: h.tag,
       anchor,
+      autoFocus: false, // editing existing: just show popup, no keyboard
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -162,6 +172,7 @@ export default function Reader({
 
     const rendition = book.renderTo(stage, renderOptions(settingsRef.current))
     renditionRef.current = rendition
+    ;(window as any).rendition = rendition // for debugging position restore
     rendition.themes.default(themeRules(settingsRef.current) as any)
     rendition.themes.fontSize(`${settingsRef.current.fontScale}%`)
 
@@ -334,6 +345,7 @@ export default function Reader({
       note: '',
       tag: undefined,
       anchor: fb.anchor,
+      autoFocus: true, // brand-new highlight: focus so the user types immediately
     })
   }
 

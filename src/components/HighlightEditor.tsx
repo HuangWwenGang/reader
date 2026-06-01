@@ -9,6 +9,7 @@ export interface EditorTarget {
   note: string
   tag?: string
   anchor: AnchorRect
+  autoFocus?: boolean // focus the textarea (pops keyboard) — only when creating
 }
 
 export default function HighlightEditor({
@@ -35,12 +36,15 @@ export default function HighlightEditor({
     if (!el) return
     const rect = el.getBoundingClientRect()
     setPos(placePopup(target.anchor, rect.width, rect.height))
-    // focus + caret at end
-    const ta = textareaRef.current
-    if (ta) {
-      ta.focus()
-      const len = ta.value.length
-      ta.setSelectionRange(len, len)
+    // focus + caret at end — only when creating a new highlight, so opening an
+    // existing one to read/edit doesn't pop the keyboard (PRD §3.4 vs editing)
+    if (target.autoFocus) {
+      const ta = textareaRef.current
+      if (ta) {
+        ta.focus()
+        const len = ta.value.length
+        ta.setSelectionRange(len, len)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target.highlightId])
