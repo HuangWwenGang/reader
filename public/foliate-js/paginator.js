@@ -239,9 +239,14 @@ class View {
             display: 'none',
             width: '100%', height: '100%',
         })
-        // `allow-scripts` is needed for events because of WebKit bug
-        // https://bugs.webkit.org/show_bug.cgi?id=218086
-        this.#iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
+        // LOCAL PATCH (diverges from upstream foliate-js):
+        // iOS Safari/WebKit fails to load a `blob:` URL into a *sandboxed* iframe
+        // when switching to a newly created one — the iframe never fires `load`,
+        // which hangs foliate's section loader and freezes ALL navigation (chapter
+        // jumps, cross-chapter paging, scroll auto-advance). Since this is a
+        // personal reader loading the user's own trusted EPUBs, we drop the
+        // sandbox so each chapter's blob iframe loads as same-origin.
+        // Upstream set: sandbox="allow-same-origin allow-scripts" (WebKit bug 218086).
         this.#iframe.setAttribute('scrolling', 'no')
     }
     get element() {

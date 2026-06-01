@@ -189,21 +189,35 @@ export default function Reader({
         },
         { passive: true },
       )
-      let touchY: number | null = null
+      // Touch: track the net swipe of a gesture, then — after momentum settles —
+      // check whether we've landed on the chapter boundary. (Instant touchmove
+      // deltas were unreliable on iPadOS; the finger often lifts before momentum
+      // scrolling reaches the bottom.)
+      let startY: number | null = null
+      let netDy = 0
       doc.addEventListener(
         'touchstart',
         (ev: TouchEvent) => {
-          touchY = ev.touches[0]?.clientY ?? null
+          startY = ev.touches[0]?.clientY ?? null
+          netDy = 0
         },
         { passive: true },
       )
       doc.addEventListener(
         'touchmove',
         (ev: TouchEvent) => {
-          if (touchY == null) return
-          const dy = touchY - (ev.touches[0]?.clientY ?? touchY)
-          if (dy > 24) tryEdgeAdvance(doc, 'down')
-          else if (dy < -24) tryEdgeAdvance(doc, 'up')
+          if (startY != null) netDy = startY - (ev.touches[0]?.clientY ?? startY)
+        },
+        { passive: true },
+      )
+      doc.addEventListener(
+        'touchend',
+        () => {
+          if (startY == null) return
+          const dir = netDy > 20 ? 'down' : netDy < -20 ? 'up' : null
+          startY = null
+          if (!dir) return
+          window.setTimeout(() => tryEdgeAdvance(doc, dir), 350)
         },
         { passive: true },
       )
@@ -229,7 +243,7 @@ export default function Reader({
       if (!frameEl || !stage) return
       const fr = frameEl.getBoundingClientRect()
       const st = stage.getBoundingClientRect()
-      const T = 4
+      const T = 8 // tolerance for iOS rubber-band overscroll
       // the iframe holds one full chapter; its bottom/top edge entering the
       // reading area means we're at the chapter's end/start
       if (dir === 'down' && fr.bottom <= st.bottom + T) {
