@@ -284,7 +284,17 @@ class View {
 
                 resolve()
             }, { once: true })
-            this.#iframe.src = src
+            // LOCAL PATCH (iOS): WebKit only loads the *first* blob: URL set as an
+            // iframe `src`; subsequent chapters silently fail to load, which froze
+            // chapter switching (foliate would just reset the current chapter to
+            // the top). Fetch the section HTML from the blob and inject it via
+            // `srcdoc` instead of navigating the iframe to the blob URL. Internal
+            // resources were already rewritten to absolute blob: URLs by epub.js,
+            // so they still resolve. Falls back to src on any error.
+            fetch(src)
+                .then(r => r.text())
+                .then(html => { this.#iframe.srcdoc = html })
+                .catch(() => { this.#iframe.src = src })
         })
     }
     render(layout) {
