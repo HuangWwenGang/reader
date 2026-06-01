@@ -129,7 +129,10 @@ export default function Reader({
       view.addEventListener('show-annotation', onShowAnnotation)
 
       view.renderer.setAttribute('flow', settingsRef.current.flow)
-      view.renderer.setAttribute('animated', '') // smooth page-turn / snap
+      // NOTE: deliberately NOT setting the `animated` attribute. On iOS Safari
+      // its 300ms animated turn could fail to resolve, leaving foliate's internal
+      // turn-lock stuck → all page-turns AND chapter jumps freeze. Plain (instant)
+      // turns are reliable; we animate our own UI chrome via CSS instead.
       view.renderer.setStyles?.(getReaderCSS(settingsRef.current))
       setToc(view.book?.toc ?? [])
 
