@@ -130,12 +130,31 @@ export default function Reader({
   const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
   const [showSettings, setShowSettings] = useState(false)
+  const [barVisible, setBarVisible] = useState(true) // immersive: tap toggles chrome
   const settingsRef = useRef(settings)
   const prevFlowRef = useRef(settings.flow)
+  const popupOpenRef = useRef(false)
+  const pendingCfiRef = useRef<string | null>(null) // gray "pending selection" highlight
 
   useEffect(() => {
     highlightsRef.current = highlights
   }, [highlights])
+  useEffect(() => {
+    popupOpenRef.current = floatBtn != null || editor != null
+  }, [floatBtn, editor])
+
+  // remove the temporary gray "pending selection" highlight
+  const clearPending = useCallback(() => {
+    const cfi = pendingCfiRef.current
+    if (cfi) {
+      try {
+        renditionRef.current?.annotations.remove(cfi, 'highlight')
+      } catch {
+        /* ignore */
+      }
+      pendingCfiRef.current = null
+    }
+  }, [])
 
   // ---- annotation helpers (epub.js) ----
   const drawHighlight = useCallback((h: Highlight) => {
@@ -237,6 +256,7 @@ export default function Reader({
           setProgress(label)
         }
       }
+      clearPending()
       setFloatBtn((b) => (b ? null : b))
     })
 
@@ -251,7 +271,46 @@ export default function Reader({
       if (!range || !text) return
       const anchor = rangeToAnchor(contents.document, range)
       if (!anchor) return
+      // Draw our OWN gray highlight for the selection, then collapse the native
+      // selection — this makes iOS's Copy/Look-Up callout disappear so it can't
+      // cover our button. Our button + gray mark replace the system menu.
+      clearPending()
+      try {
+        rendition.annotations.add('highlight', cfiRange, {}, undefined, 'pending', {
+          fill: '#9a9a9a',
+          'fill-opacity': '0.35',
+        })
+        pendingCfiRef.current = cfiRange
+      } catch {
+        /* ignore */
+      }
+      try {
+        contents.window.getSelection()?.removeAllRanges()
+      } catch {
+        /* ignore */
+      }
       setFloatBtn({ anchor, cfi: cfiRange, text, selDoc: contents.document })
+    })
+
+    // single tap in the reading area: dismiss a popup, else toggle the chrome
+    // (immersive). iOS reserves double-tap for word selection, so we use a tap.
+    rendition.on('rendered', (_section: any, view: any) => {
+      const doc: Document | undefined =
+        view?.document ?? view?.contents?.document
+      if (!doc || (doc as any).__tapBound) return
+      ;(doc as any).__tapBound = true
+      doc.addEventListener('click', (ev: MouseEvent) => {
+        const sel = doc.getSelection()
+        if (sel && !sel.isCollapsed) return
+        if ((ev.target as HTMLElement)?.closest?.('a[href]')) return
+        if (popupOpenRef.current) {
+          clearPending()
+          setFloatBtn(null)
+          setEditor(null)
+          return
+        }
+        setBarVisible((v) => !v)
+      })
     })
 
     await rendition.display(startCfi || undefined)
@@ -379,6 +438,13 @@ export default function Reader({
     highlightsRef.current = [...highlightsRef.current, h]
     setHighlights(highlightsRef.current)
     await saveHighlight(h)
+    // replace the gray pending mark with the real colored highlight (same cfi)
+    pendingCfiRef.current = null
+    try {
+      renditionRef.current?.annotations.remove(fb.cfi, 'highlight')
+    } catch {
+      /* ignore */
+    }
     drawHighlight(h)
     try {
       fb.selDoc.getSelection()?.removeAllRanges()
@@ -502,7 +568,7 @@ export default function Reader({
   }
 
   return (
-    <div className="reader">
+    <div className={'reader' + (barVisible ? '' : ' immersive')}>
       <div className="reader-bar">
         <button className="icon-btn" onClick={onClose} title="返回书架">
           ‹

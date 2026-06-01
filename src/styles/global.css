@@ -195,6 +195,20 @@ button {
   border-bottom: 1px solid var(--line);
   background: var(--paper);
   z-index: 5;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+/* immersive mode: hide top + bottom chrome, tap to bring back */
+.reader.immersive .reader-bar {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.reader.immersive .reader-progress {
+  opacity: 0;
+}
+.reader-progress {
+  transition: opacity 0.25s ease;
 }
 
 .reader-bar .spacer {
