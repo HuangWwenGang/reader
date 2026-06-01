@@ -96,8 +96,8 @@ export async function exportAllData(): Promise<unknown> {
   return {
     exportedAt: new Date().toISOString(),
     version: 1,
-    books: books.map(({ fileBlob, cover, ...rest }) => {
-      void fileBlob
+    books: books.map(({ file, cover, ...rest }) => {
+      void file
       void cover
       return rest
     }),

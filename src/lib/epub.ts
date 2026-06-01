@@ -8,28 +8,30 @@ import { THEMES } from './settings'
 
 export type { Book }
 
-export function openBookFromBlob(blob: Blob): Promise<Book> {
-  return blob.arrayBuffer().then((buf) => ePub(buf as ArrayBuffer))
+// Open a Book from raw EPUB bytes. We slice a copy so the stored ArrayBuffer is
+// never mutated/detached by JSZip across repeated opens.
+export function openBookFromBuffer(buf: ArrayBuffer): Book {
+  return ePub(buf.slice(0))
 }
 
 export interface BookMeta {
   title: string
   author?: string
-  cover?: Blob | null
+  cover?: ArrayBuffer | null
 }
 
 // Parse an EPUB just enough for the shelf (title/author/cover).
-export async function extractMeta(blob: Blob): Promise<BookMeta> {
-  const book = ePub(await blob.arrayBuffer())
+export async function extractMeta(buf: ArrayBuffer): Promise<BookMeta> {
+  const book = ePub(buf.slice(0))
   try {
     await book.ready
     const meta = await book.loaded.metadata
     const title = meta?.title || '未命名书籍'
     const author = (meta?.creator as string) || undefined
-    let cover: Blob | null = null
+    let cover: ArrayBuffer | null = null
     try {
       const url = await book.coverUrl()
-      if (url) cover = await (await fetch(url)).blob()
+      if (url) cover = await (await fetch(url)).arrayBuffer()
     } catch {
       cover = null
     }

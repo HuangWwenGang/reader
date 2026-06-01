@@ -10,18 +10,21 @@ import type { Book } from '../lib/types'
 
 function CoverImage({ book }: { book: Book }) {
   const [url, setUrl] = useState<string | null>(null)
+  const [broken, setBroken] = useState(false)
   useEffect(() => {
-    if (book.cover) {
-      const u = URL.createObjectURL(book.cover)
+    setBroken(false)
+    if (book.cover && book.cover.byteLength > 0) {
+      const u = URL.createObjectURL(new Blob([book.cover]))
       setUrl(u)
       return () => URL.revokeObjectURL(u)
     }
+    setUrl(null)
   }, [book.cover])
 
-  if (url) {
+  if (url && !broken) {
     return (
       <div className="cover">
-        <img src={url} alt={book.title} />
+        <img src={url} alt={book.title} onError={() => setBroken(true)} />
       </div>
     )
   }
@@ -64,13 +67,14 @@ export default function Bookshelf({
           showToast('只支持 .epub 文件')
           continue
         }
-        const meta = await extractMeta(file)
+        const buf = await file.arrayBuffer()
+        const meta = await extractMeta(buf)
         const book: Book = {
           id: crypto.randomUUID(),
           title: meta.title,
           author: meta.author,
           cover: meta.cover ?? null,
-          fileBlob: file,
+          file: buf,
           createdAt: Date.now(),
         }
         await addBook(book)

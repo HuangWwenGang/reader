@@ -8,7 +8,7 @@ import {
 } from '../lib/db'
 import {
   getCFIComparator,
-  openBookFromBlob,
+  openBookFromBuffer,
   renderOptions,
   themeRules,
   type Book,
@@ -195,7 +195,21 @@ export default function Reader({
       }
       if (cancelled) return
       setTitle(rec.title)
-      const book = await openBookFromBlob(rec.fileBlob)
+      // ArrayBuffer is the current format; fall back to legacy Blob records.
+      let buf: ArrayBuffer | null = rec.file ?? null
+      const legacy = (rec as any).fileBlob as Blob | undefined
+      if (!buf && legacy?.arrayBuffer) {
+        try {
+          buf = await legacy.arrayBuffer()
+        } catch {
+          buf = null
+        }
+      }
+      if (!buf) {
+        setError('这本书的数据已失效（旧格式），请删除后重新导入。')
+        return
+      }
+      const book = openBookFromBuffer(buf)
       bookRef.current = book
       await book.ready
       if (cancelled) return

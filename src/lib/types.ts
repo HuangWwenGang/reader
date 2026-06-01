@@ -4,9 +4,12 @@ export interface Book {
   id: string
   title: string
   author?: string
-  cover?: Blob | null
-  fileBlob: Blob // the epub file itself
-  lastLocation?: string // foliate-js CFI, for restoring reading position
+  // Stored as ArrayBuffer (NOT Blob): iOS Safari backs IndexedDB Blobs with temp
+  // files that get reclaimed, later throwing "The object can not be found here"
+  // and breaking covers. ArrayBuffers are stored inline and stay valid.
+  cover?: ArrayBuffer | null
+  file: ArrayBuffer // the epub file bytes
+  lastLocation?: string // epub CFI, for restoring reading position
   createdAt: number
 }
 
