@@ -1,0 +1,6 @@
+node_modules
+dist
+dist-ssr
+_foliate-src
+*.local
+.DS_Store
