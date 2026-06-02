@@ -18,13 +18,13 @@ import { EpubCFI } from 'epubjs'
 import type { Settings } from './settings'
 import { THEMES } from './settings'
 import { readerCss } from './epub'
-import { getHeights, saveHeights } from './db'
+import { getHeights, getHeightsComplete, saveHeights } from './db'
 import { rangeToAnchor, type AnchorRect } from './geometry'
 import { colorForTag } from './tags'
 import type { Highlight } from './types'
 
-const BUFFER = 3 // load/keep chapters within ±this many screens of the viewport
-const RECYCLE = 5 // recycle chapters beyond ±this many screens
+const BUFFER = 1.6 // load/keep chapters within ±this many screens of the viewport
+const RECYCLE = 2.6 // recycle chapters beyond ±this many screens
 const SAVE_DEBOUNCE = 300
 
 export interface RelocateInfo {
@@ -74,6 +74,7 @@ export class VirtualReader {
   private toc: { href: string; label: string }[] = []
   private bookId = ''
   private fromCache = false
+  private cacheComplete = false
 
   constructor(
     book: any,
@@ -104,10 +105,10 @@ export class VirtualReader {
       position: 'absolute', inset: '0', overflowY: 'auto', overflowX: 'hidden',
       // themed backdrop so any momentary gap shows the page color, never white
       background: THEMES[this.settings.theme].bg,
-      // NOTE: deliberately NOT setting `-webkit-overflow-scrolling: touch`.
-      // It's deprecated (iOS 13+ scrolls with momentum by default) and forces
-      // the scroller into a cached tile layer that iOS translates instead of
-      // re-rasterizing — which softens the text. Omitting it = crisper glyphs.
+      // hardware-accelerated momentum scrolling. The at-rest crispness comes
+      // from whole-pixel layout (Math.ceil heights), so we keep this for smooth
+      // flings; any softening only happens mid-scroll, which you can't read.
+      WebkitOverflowScrolling: 'touch',
     } as any)
     this.container.appendChild(this.scroller)
 
@@ -134,6 +135,7 @@ export class VirtualReader {
     this.estH = Math.max(800, Math.round(this.scroller.clientHeight * 1.4))
     const cached = await getHeights(`${bookId}:${this.layoutKey()}`)
     this.fromCache = !!(cached && cached.length === this.sections.length)
+    this.cacheComplete = this.fromCache && (await getHeightsComplete(`${bookId}:${this.layoutKey()}`))
     this.heights = this.sections.map((_, i) => (this.fromCache ? cached![i] : this.estH))
 
     // initial chapter
@@ -174,7 +176,10 @@ export class VirtualReader {
     this.scroller.addEventListener('scroll', this.onScroll, { passive: true })
     this.emitRelocate()
 
-    if (!this.fromCache) {
+    // Run the whole-book premeasure unless we already have a COMPLETE cache.
+    // A partial cache (premeasure interrupted last time) still has estimates for
+    // un-reached chapters → they'd drift on arrival, so finish the job.
+    if (!this.cacheComplete) {
       const kick = () => this.premeasureAll()
       const ric = (window as any).requestIdleCallback
       if (typeof ric === 'function') ric(kick, { timeout: 2500 })
@@ -371,56 +376,39 @@ export class VirtualReader {
         40,
       ),
     )
-    if (Math.abs(h - this.heights[i]) < 1) return
-    // Capture what's at the viewport top BEFORE resizing, so we can pin it after
-    // (scroll anchoring) — a height correction must never move what you're reading.
-    const anchor = this.captureAnchor()
-    this.heights[i] = h
-    m.el.style.height = `${h}px`
-    if (anchor) {
-      if (!m.measured && anchor.index === i && anchor.offset > h + 8) {
-        // First real measure of this chapter and the viewport top was sitting in
-        // its over-estimated tail (below where the real content ends). Rather
-        // than strand the reader mid-chapter / past the heading, bring the
-        // chapter's start to the top so they see the title first, as expected.
-        this.correcting = true
-        this.scroller.scrollTop = m.el.offsetTop
-        this.correcting = false
-      } else {
-        this.restoreAnchor(anchor)
-      }
+    if (Math.abs(h - this.heights[i]) < 1) {
+      m.measured = true
+      return
     }
+    const delta = h - this.heights[i]
+    this.heights[i] = h
+    const scTop = this.scroller.getBoundingClientRect().top
+    const r = m.el.getBoundingClientRect()
+    const offsetInto = scTop - r.top // viewport top, measured from this section's top
+    m.el.style.height = `${h}px`
+    if (r.bottom <= scTop + 1) {
+      // chapter is entirely ABOVE the viewport: the reflow pushed everything
+      // below by `delta`; counter it exactly so the page doesn't move. (This is
+      // the original, drift-free behavior.)
+      this.correcting = true
+      this.scroller.scrollTop += delta
+      this.correcting = false
+    } else if (!m.measured && offsetInto > h + 8) {
+      // FIRST measure of this chapter, and the viewport top was stranded in its
+      // over-estimated tail (below where the real content ends). Pull the
+      // chapter start to the top so the reader sees the heading first instead of
+      // landing mid-chapter. Guarded by `measured` so a small late re-measure
+      // while reading never yanks the view.
+      this.correcting = true
+      this.scroller.scrollTop = m.el.offsetTop
+      this.correcting = false
+    }
+    // when the viewport top is WITHIN this chapter's content, do nothing: its
+    // content is top-anchored, only the box tail changed → nothing visible moves.
     m.measured = true
     this.drawHighlights(i)
     this.scheduleCache()
     this.fillWindow()
-  }
-
-  // The section spanning the viewport top, and how far into it the top edge sits.
-  private captureAnchor(): { index: number; offset: number } | null {
-    const scTop = this.scroller.getBoundingClientRect().top
-    for (const [idx, m] of this.mounted) {
-      const r = m.el.getBoundingClientRect()
-      if (r.top <= scTop + 0.5 && r.bottom > scTop + 0.5) {
-        return { index: idx, offset: scTop - r.top }
-      }
-    }
-    return null
-  }
-
-  // Scroll so the captured section sits at the same offset under the viewport
-  // top again (cancels any shift caused by a height change above/at the top).
-  private restoreAnchor(a: { index: number; offset: number }) {
-    const m = this.mounted.get(a.index)
-    if (!m) return
-    const scTop = this.scroller.getBoundingClientRect().top
-    const now = scTop - m.el.getBoundingClientRect().top
-    const diff = a.offset - now
-    if (Math.abs(diff) > 0.5) {
-      this.correcting = true
-      this.scroller.scrollTop += diff
-      this.correcting = false
-    }
   }
 
   // ---- scroll / position ----
@@ -627,9 +615,22 @@ export class VirtualReader {
       if (layoutChanged) this.measure(i)
     }
     if (layoutChanged) {
-      const cached = await getHeights(`${this.bookId}:${this.layoutKey()}`)
-      this.fromCache = !!(cached && cached.length === this.sections.length)
-      // unmounted chapters re-estimate; their cache (if any) loads on next open
+      const key = `${this.bookId}:${this.layoutKey()}`
+      const cached = await getHeights(key)
+      const N = this.sections.length
+      this.fromCache = !!(cached && cached.length === N)
+      this.cacheComplete = this.fromCache && (await getHeightsComplete(key))
+      // re-seed unmounted chapters for the NEW layout so they don't mount at a
+      // stale height from the old font/size (which would drift on arrival)
+      for (let i = 0; i < N; i++) {
+        if (this.mounted.has(i)) continue
+        this.heights[i] = this.fromCache ? cached![i] : this.estH
+      }
+      if (!this.cacheComplete && !this.premeasuring) {
+        const ric = (window as any).requestIdleCallback
+        if (typeof ric === 'function') ric(() => this.premeasureAll(), { timeout: 2500 })
+        else window.setTimeout(() => this.premeasureAll(), 600)
+      }
     }
   }
 
@@ -828,8 +829,11 @@ export class VirtualReader {
     }
     hidden.remove()
     this.premeasuring = false
-    if (!this.destroyed) {
-      saveHeights(`${this.bookId}:${this.layoutKey()}`, this.heights.slice()).catch(() => {})
+    // only mark COMPLETE if we actually measured the whole book (not aborted)
+    const finished = !this.destroyed
+    if (finished) {
+      this.cacheComplete = true
+      saveHeights(`${this.bookId}:${this.layoutKey()}`, this.heights.slice(), true).catch(() => {})
     }
   }
 

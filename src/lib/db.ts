@@ -16,7 +16,7 @@ interface ReaderDB extends DBSchema {
   // `${bookId}:${layoutHash}` (heights depend on font/spacing/width)
   heights: {
     key: string
-    value: { key: string; heights: number[] }
+    value: { key: string; heights: number[]; complete?: boolean }
   }
 }
 
@@ -49,9 +49,22 @@ export async function getHeights(key: string): Promise<number[] | undefined> {
   return rec?.heights
 }
 
-export async function saveHeights(key: string, heights: number[]): Promise<void> {
+// Whether the whole-book background premeasure finished for this layout. If not,
+// the cached heights are partial (estimates for chapters not yet reached) and
+// premeasure should run again to fill the gaps.
+export async function getHeightsComplete(key: string): Promise<boolean> {
   const db = await getDB()
-  await db.put('heights', { key, heights })
+  const rec = await db.get('heights', key)
+  return !!rec?.complete
+}
+
+export async function saveHeights(
+  key: string,
+  heights: number[],
+  complete = false,
+): Promise<void> {
+  const db = await getDB()
+  await db.put('heights', { key, heights, complete })
 }
 
 // ---- Books ----
