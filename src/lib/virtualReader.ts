@@ -69,6 +69,12 @@ export class VirtualReader {
   private correcting = false
   private destroyed = false
   private rafPending = false
+  // While the user is actively scrolling we must NOT set scrollTop (on iOS that
+  // fights the momentum and teleports the view). Height corrections that would
+  // move scrollTop are deferred here and applied once scrolling settles.
+  private isScrolling = false
+  private scrollIdle: number | null = null
+  private pendingMeasure = new Set<number>()
   private saveTimer: number | null = null
   private highlights: Highlight[] = []
   private toc: { href: string; label: string }[] = []
@@ -190,6 +196,7 @@ export class VirtualReader {
   destroy() {
     this.destroyed = true
     if (this.saveTimer) clearTimeout(this.saveTimer)
+    if (this.scrollIdle) clearTimeout(this.scrollIdle)
     this.scroller?.removeEventListener('scroll', this.onScroll)
     for (const [, m] of this.mounted) {
       try {
@@ -380,11 +387,19 @@ export class VirtualReader {
       m.measured = true
       return
     }
-    const delta = h - this.heights[i]
-    this.heights[i] = h
     const scTop = this.scroller.getBoundingClientRect().top
     const r = m.el.getBoundingClientRect()
     const offsetInto = scTop - r.top // viewport top, measured from this section's top
+    const wouldMoveScroll = r.bottom <= scTop + 1 || (!m.measured && offsetInto > h + 8)
+    if (wouldMoveScroll && this.isScrolling) {
+      // Defer: setting scrollTop now would fight the momentum and teleport the
+      // page. Apply once the scroll settles (flushPendingMeasures), anchored so
+      // the reading position is preserved. Height is left unchanged for now.
+      this.pendingMeasure.add(i)
+      return
+    }
+    const delta = h - this.heights[i]
+    this.heights[i] = h
     m.el.style.height = `${h}px`
     if (r.bottom <= scTop + 1) {
       // chapter is entirely ABOVE the viewport: the reflow pushed everything
@@ -414,6 +429,13 @@ export class VirtualReader {
   // ---- scroll / position ----
   private onScroll = () => {
     if (this.correcting || this.destroyed) return
+    // mark "actively scrolling"; clears a short beat after the last scroll event
+    this.isScrolling = true
+    if (this.scrollIdle) clearTimeout(this.scrollIdle)
+    this.scrollIdle = window.setTimeout(() => {
+      this.isScrolling = false
+      this.flushPendingMeasures()
+    }, 160)
     if (this.rafPending) return
     this.rafPending = true
     requestAnimationFrame(() => {
@@ -422,6 +444,16 @@ export class VirtualReader {
       this.fillWindow()
       this.scheduleRelocate()
     })
+  }
+
+  // Apply height corrections that were deferred during scrolling, now that the
+  // scroll has settled and touching scrollTop is safe again. measure() handles
+  // the exact above-the-viewport compensation / snap itself.
+  private flushPendingMeasures() {
+    if (this.pendingMeasure.size === 0 || this.destroyed) return
+    const ids = [...this.pendingMeasure].sort((a, b) => a - b)
+    this.pendingMeasure.clear()
+    for (const i of ids) this.measure(i)
   }
 
   private updateAnchor() {
