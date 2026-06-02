@@ -446,27 +446,82 @@ export class VirtualReader {
     this.saveTimer = window.setTimeout(() => this.emitRelocate(), SAVE_DEBOUNCE)
   }
 
+  // CFI of the content at the viewport top. Uses REAL screen geometry (iframe
+  // getBoundingClientRect) instead of the offsets bookkeeping, and validates
+  // caretRangeFromPoint (it clamps/fails on tall not-yet-measured iframes — the
+  // cause of the large-book "forward read not recorded" bug); falls back to a
+  // block-element scan so a section that just mounted still yields a position.
   currentCfi(): string | undefined {
-    const i = this.anchor.index
-    const m = this.mounted.get(i)
-    if (!m || !m.doc) return undefined
-    try {
-      const x = Math.max(20, Math.min(m.doc.documentElement.clientWidth / 2, 300))
-      const range = (m.doc as any).caretRangeFromPoint?.(x, this.anchor.intra + 2)
-      if (range) return this.sections[i].cfiFromRange(range)
-    } catch {
-      /* ignore */
+    if (!this.scroller) return undefined
+    const probeY = this.scroller.getBoundingClientRect().top + 2
+    for (const [i, m] of this.mounted) {
+      if (!m.doc) continue
+      const fr = m.iframe.getBoundingClientRect()
+      if (fr.top - 1 > probeY || fr.bottom <= probeY) continue
+      // this is the section at the viewport top
+      const localY = probeY - fr.top
+      let range: Range | null = null
+      try {
+        const x = Math.max(24, Math.min(m.doc.documentElement.clientWidth / 2, 320))
+        const r = (m.doc as any).caretRangeFromPoint?.(x, localY) as Range | null
+        if (r) {
+          const rr = r.getBoundingClientRect()
+          // only trust it if the resolved point is actually near the probe
+          if (Math.abs(rr.top + fr.top - probeY) < 240) range = r
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!range) range = this.rangeFromScreenY(m.doc, probeY)
+      if (range) {
+        try {
+          return this.sections[i].cfiFromRange(range)
+        } catch {
+          return undefined
+        }
+      }
+      return undefined
     }
     return undefined
   }
 
+  private rangeFromScreenY(doc: Document, screenY: number): Range | null {
+    const blocks = doc.body?.querySelectorAll(
+      'p,li,blockquote,h1,h2,h3,h4,h5,h6,pre,figure,img,td',
+    )
+    if (!blocks) return null
+    let crossing: Element | null = null
+    let crossingTop = -Infinity
+    let firstBelow: Element | null = null
+    for (const el of Array.from(blocks)) {
+      const r = (el as HTMLElement).getBoundingClientRect()
+      if (r.height < 1) continue
+      if (r.top <= screenY && r.bottom > screenY) {
+        if (r.top > crossingTop) {
+          crossing = el
+          crossingTop = r.top
+        }
+      } else if (r.top > screenY && !firstBelow) {
+        firstBelow = el
+      }
+    }
+    const el = crossing ?? firstBelow
+    if (!el) return null
+    try {
+      const range = doc.createRange()
+      range.selectNodeContents(el)
+      range.collapse(true)
+      return range
+    } catch {
+      return null
+    }
+  }
+
   private emitRelocate() {
-    const i = this.anchor.index
     const cfi = this.currentCfi()
-    const percentage = this.total > 0
-      ? (this.offsets[i] + this.anchor.intra) / this.total
-      : 0
-    const chapter = this.chapterTitleFor(i)
+    const percentage =
+      this.total > 0 ? this.scroller.scrollTop / this.total : 0
+    const chapter = this.chapterTitleFor(this.anchor.index)
     this.cb.onRelocate?.({ cfi, percentage, chapter })
   }
 
@@ -493,16 +548,9 @@ export class VirtualReader {
     if (!section) return
     const i = this.sections.findIndex((s) => s.index === section.index)
     if (i < 0) return
-    // place the anchor at the section start first, then refine to the element
-    this.anchor = { index: i, intra: 0 }
-    if (!this.correcting) {
-      this.correcting = true
-      this.scroller.scrollTop = this.offsets[i]
-      this.correcting = false
-    }
-    await this.update()
-    // ensure the target section is fully LOADED (not just registered), then
-    // refine to the exact CFI element
+    // Mount the target section (off-screen) and LOAD it first, so we can compute
+    // the exact final scroll position in ONE step — no "jump to chapter top then
+    // correct" flicker.
     if (!this.mounted.has(i)) this.mountSection(i)
     const m = this.mounted.get(i)
     if (m) {
@@ -512,21 +560,20 @@ export class VirtualReader {
         /* ignore */
       }
     }
+    let intra = 0
     if (m?.doc && target.startsWith('epubcfi(')) {
       try {
         const range = new EpubCFI(target).toRange(m.doc)
-        if (range) {
-          const top = range.getBoundingClientRect().top
-          this.anchor = { index: i, intra: Math.max(0, top) }
-          this.correcting = true
-          this.scroller.scrollTop = this.offsets[i] + this.anchor.intra
-          this.correcting = false
-          await this.update()
-        }
+        if (range) intra = Math.max(0, range.getBoundingClientRect().top)
       } catch {
         /* ignore */
       }
     }
+    this.anchor = { index: i, intra }
+    this.correcting = true
+    this.scroller.scrollTop = this.offsets[i] + intra
+    this.correcting = false
+    await this.update()
     if (!isInitial) this.emitRelocate()
   }
 
