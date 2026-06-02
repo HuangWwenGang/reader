@@ -79,7 +79,6 @@ export class VirtualReader {
   private isScrolling = false
   private scrollIdle: number | null = null
   private pendingMeasure = new Set<number>()
-  private needWindowFlush = false // a prepend/recycle-above was deferred
   private saveTimer: number | null = null
   private highlights: Highlight[] = []
   private toc: { href: string; label: string }[] = []
@@ -333,53 +332,57 @@ export class VirtualReader {
     }
   }
 
+  private fillScheduled = false
+  private scheduleFill() {
+    if (this.fillScheduled || this.destroyed || !this.scroller) return
+    this.fillScheduled = true
+    requestAnimationFrame(() => {
+      this.fillScheduled = false
+      this.fillWindow()
+    })
+  }
+
+  // Do AT MOST ONE mount/recycle per call, then reschedule on the next frame if
+  // more is needed. This spreads iframe creation across frames so re-reading
+  // backward never renders a dozen chapters at once (the 1–2s freeze). Priority:
+  // append-below → prepend-above → recycle. Append/prepend run during scrolling
+  // (prepend is what makes back-reading load); recycle-above is deferred while
+  // scrolling because it writes scrollTop (iOS momentum teleport).
   private fillWindow() {
     if (this.destroyed || !this.scroller) return
-    const vh = this.scroller.clientHeight
+    const sc = this.scroller
+    const vh = sc.clientHeight
     const N = this.sections.length
-    let guard = 0
-    // append below — safe during scrolling (only adds content below, never
-    // touches scrollTop). This keeps look-ahead working even mid-fling.
-    while (
-      this.lastLoaded < N - 1 &&
-      this.scroller.scrollHeight - (this.scroller.scrollTop + vh) < BUFFER * vh &&
-      guard++ < 40
-    ) {
+    const rect = sc.getBoundingClientRect()
+
+    // 1. append below — no scrollTop change, safe anytime
+    if (this.lastLoaded < N - 1 && sc.scrollHeight - (sc.scrollTop + vh) < BUFFER * vh) {
       this.appendBottom(this.lastLoaded + 1)
+      return this.scheduleFill()
     }
-    // recycle far below — fromTop=false, no scrollTop change → safe anytime
-    const scBottom = this.scroller.getBoundingClientRect().bottom
-    while (this.lastLoaded > this.anchorIndex + 1) {
+    // 2. prepend above — writes scrollTop, but needed so back-reading loads; at
+    //    most one per frame keeps it cheap (no freeze)
+    if (this.firstLoaded > 0 && sc.scrollTop < BUFFER * vh) {
+      this.prependTop(this.firstLoaded - 1)
+      return this.scheduleFill()
+    }
+    // 3. recycle far below — fromTop=false, no scrollTop change → safe anytime
+    if (this.lastLoaded > this.anchorIndex + 1) {
       const m = this.mounted.get(this.lastLoaded)
-      if (m && m.el.getBoundingClientRect().top > scBottom + RECYCLE * vh) {
+      if (m && m.el.getBoundingClientRect().top > rect.bottom + RECYCLE * vh) {
         this.removeSection(this.lastLoaded, false)
         this.lastLoaded--
-      } else break
+        return this.scheduleFill()
+      }
     }
-    // The remaining operations PREPEND or RECYCLE-ABOVE, which both move
-    // scrollTop to keep the view put. On iOS, writing scrollTop during a
-    // momentum scroll teleports the page — so defer them until scrolling stops.
-    if (this.isScrolling) {
-      this.needWindowFlush = true
-      return
-    }
-    // prepend above
-    guard = 0
-    while (
-      this.firstLoaded > 0 &&
-      this.scroller.scrollTop < BUFFER * vh &&
-      guard++ < 40
-    ) {
-      this.prependTop(this.firstLoaded - 1)
-    }
-    // recycle far above
-    const scTop = this.scroller.getBoundingClientRect().top
-    while (this.firstLoaded < this.anchorIndex - 1) {
+    // 4. recycle far above — writes scrollTop → only when the scroll has settled
+    if (!this.isScrolling && this.firstLoaded < this.anchorIndex - 1) {
       const m = this.mounted.get(this.firstLoaded)
-      if (m && m.el.getBoundingClientRect().bottom < scTop - RECYCLE * vh) {
+      if (m && m.el.getBoundingClientRect().bottom < rect.top - RECYCLE * vh) {
         this.removeSection(this.firstLoaded, true)
         this.firstLoaded++
-      } else break
+        return this.scheduleFill()
+      }
     }
   }
 
@@ -448,10 +451,7 @@ export class VirtualReader {
     this.scrollIdle = window.setTimeout(() => {
       this.isScrolling = false
       this.flushPendingMeasures()
-      if (this.needWindowFlush) {
-        this.needWindowFlush = false
-        this.fillWindow() // run the deferred prepend / recycle-above now
-      }
+      this.fillWindow() // run deferred recycle-above now that scrolling stopped
     }, 160)
     if (this.rafPending) return
     this.rafPending = true
