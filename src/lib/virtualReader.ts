@@ -138,8 +138,9 @@ export class VirtualReader {
     this.estH = Math.max(800, Math.round(this.scroller.clientHeight * 1.4))
     this.bookId = bookId
     const cached = await getHeights(`${bookId}:${this.layoutKey()}`)
+    this.fromCache = !!(cached && cached.length === this.sections.length)
     this.heights = this.sections.map((_, i) =>
-      cached && cached.length === this.sections.length ? cached[i] : this.estH,
+      this.fromCache ? cached![i] : this.estH,
     )
     this.recomputeOffsets(0)
     this.spacer.style.height = `${this.total}px`
@@ -155,9 +156,94 @@ export class VirtualReader {
 
     this.scroller.addEventListener('scroll', this.onScroll, { passive: true })
     this.emitRelocate()
+
+    // First open (no cached heights): measure every chapter in the background so
+    // the WHOLE book has accurate heights (accurate jumps, stable scrollbar, no
+    // overlap) without the user having to read through it. Cached for next time.
+    if (!this.fromCache) {
+      const kick = () => this.premeasureAll()
+      const ric = (window as any).requestIdleCallback
+      if (typeof ric === 'function') ric(kick, { timeout: 2500 })
+      else window.setTimeout(kick, 900)
+    }
   }
 
+  private fromCache = false
   private bookId = ''
+
+  private async premeasureAll() {
+    if (this.premeasuring || this.destroyed) return
+    this.premeasuring = true
+    const hidden = document.createElement('iframe')
+    Object.assign(hidden.style, {
+      position: 'absolute',
+      left: '-99999px',
+      top: '0',
+      width: `${this.scroller.clientWidth}px`,
+      height: '10px',
+      border: '0',
+      visibility: 'hidden',
+    } as any)
+    this.container.appendChild(hidden)
+    for (let i = 0; i < this.sections.length; i++) {
+      if (this.destroyed) break
+      if (this.mounted.get(i)?.measured) continue
+      let h = 0
+      try {
+        const html = await this.sections[i].render(this.book.load.bind(this.book))
+        h = await this.measureHidden(hidden, html)
+      } catch {
+        h = 0
+      }
+      if (h > 40 && Math.abs(h - this.heights[i]) > 1) {
+        const delta = h - this.heights[i]
+        const above = this.offsets[i] < this.scroller.scrollTop
+        this.heights[i] = h
+        this.recomputeOffsets(i + 1)
+        this.spacer.style.height = `${this.total}px`
+        for (const [j, mj] of this.mounted) mj.slot.style.top = `${this.offsets[j]}px`
+        if (above) {
+          this.correcting = true
+          this.scroller.scrollTop += delta
+          this.correcting = false
+        }
+      }
+      await new Promise((r) => setTimeout(r, 0)) // yield to keep UI responsive
+    }
+    hidden.remove()
+    this.premeasuring = false
+    if (!this.destroyed) {
+      saveHeights(
+        `${this.bookId}:${this.layoutKey()}`,
+        this.heights.slice(),
+      ).catch(() => {})
+    }
+  }
+  private premeasuring = false
+
+  private measureHidden(iframe: HTMLIFrameElement, html: string): Promise<number> {
+    return new Promise((resolve) => {
+      const onload = () => {
+        try {
+          const doc = iframe.contentDocument
+          if (!doc) return resolve(0)
+          this.injectCss(doc)
+          requestAnimationFrame(() => {
+            const h = Math.max(
+              doc.body?.scrollHeight ?? 0,
+              doc.body?.getBoundingClientRect().height ?? 0,
+              0,
+            )
+            resolve(h)
+          })
+        } catch {
+          resolve(0)
+        }
+      }
+      iframe.addEventListener('load', onload, { once: true })
+      iframe.srcdoc = html
+    })
+  }
 
   destroy() {
     this.destroyed = true
@@ -298,17 +384,34 @@ export class VirtualReader {
         // theme
         this.injectCss(doc)
         this.wireDoc(i, doc)
-        // measure (after fonts settle)
-        const measure = () => this.measure(i)
-        measure()
+        // Re-measure aggressively: content height settles asynchronously as
+        // fonts AND images load. Missing those was why the FIRST open had
+        // overlap/blank/jump issues (heights measured too early) while the
+        // second open (cached heights) was perfect.
+        const remeasure = () => this.measure(i)
+        requestAnimationFrame(remeasure)
         try {
-          ;(doc as any).fonts?.ready?.then(measure)
+          ;(doc as any).fonts?.ready?.then(remeasure)
         } catch {
           /* ignore */
         }
         try {
-          m.ro = new ResizeObserver(() => this.measure(i))
-          m.ro.observe(doc.documentElement)
+          for (const img of Array.from(doc.querySelectorAll('img'))) {
+            if (!(img as HTMLImageElement).complete) {
+              img.addEventListener('load', remeasure, { once: true })
+              img.addEventListener('error', remeasure, { once: true })
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        // a few delayed catches for anything async we missed
+        window.setTimeout(remeasure, 200)
+        window.setTimeout(remeasure, 700)
+        window.setTimeout(remeasure, 1800)
+        try {
+          m.ro = new ResizeObserver(remeasure)
+          m.ro.observe(doc.body ?? doc.documentElement)
         } catch {
           /* ignore */
         }
@@ -425,9 +528,9 @@ export class VirtualReader {
     m.measured = true
     this.recomputeOffsets(i + 1)
     this.spacer.style.height = `${this.total}px`
-    // reposition mounted sections after i
+    // reposition ALL mounted slots to their current offsets (prevents overlap)
     for (const [j, mj] of this.mounted) {
-      if (j > i) mj.slot.style.top = `${this.offsets[j]}px`
+      mj.slot.style.top = `${this.offsets[j]}px`
     }
     // anchor correction: keep what's at the viewport top pinned
     if (this.offsets[i] < this.scroller.scrollTop || (this.anchor.index === i && delta)) {
