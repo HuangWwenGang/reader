@@ -100,7 +100,10 @@ export class VirtualReader {
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
       position: 'absolute', inset: '0', overflowY: 'auto', overflowX: 'hidden',
-      WebkitOverflowScrolling: 'touch',
+      // NOTE: deliberately NOT setting `-webkit-overflow-scrolling: touch`.
+      // It's deprecated (iOS 13+ scrolls with momentum by default) and forces
+      // the scroller into a cached tile layer that iOS translates instead of
+      // re-rasterizing — which softens the text. Omitting it = crisper glyphs.
     } as any)
     this.container.appendChild(this.scroller)
 
@@ -347,10 +350,15 @@ export class VirtualReader {
   private measure(i: number) {
     const m = this.mounted.get(i)
     if (!m || !m.doc) return
-    const h = Math.max(
-      m.doc.body?.scrollHeight ?? 0,
-      m.doc.body?.getBoundingClientRect().height ?? 0,
-      40,
+    // round UP to a whole pixel: a fractional section height would place every
+    // chapter below it on a sub-pixel row, so the browser rasterizes the text
+    // with interpolation → the slight "fuzzy / not as crisp as native" look.
+    const h = Math.ceil(
+      Math.max(
+        m.doc.body?.scrollHeight ?? 0,
+        m.doc.body?.getBoundingClientRect().height ?? 0,
+        40,
+      ),
     )
     if (Math.abs(h - this.heights[i]) < 1) return
     const delta = h - this.heights[i]
@@ -522,7 +530,7 @@ export class VirtualReader {
       if (target.startsWith('epubcfi(')) {
         try {
           const range = new EpubCFI(target).toRange(m.doc)
-          if (range) intra = Math.max(0, range.getBoundingClientRect().top)
+          if (range) intra = Math.round(Math.max(0, range.getBoundingClientRect().top))
         } catch {
           /* ignore */
         }
@@ -537,7 +545,7 @@ export class VirtualReader {
         } catch {
           el = null
         }
-        if (el) intra = Math.max(0, (el as HTMLElement).getBoundingClientRect().top)
+        if (el) intra = Math.round(Math.max(0, (el as HTMLElement).getBoundingClientRect().top))
       }
     }
     this.correcting = true
@@ -776,7 +784,9 @@ export class VirtualReader {
             if (!doc) return resolve(0)
             this.injectCss(doc)
             const read = () =>
-              Math.max(doc.body?.scrollHeight ?? 0, doc.body?.getBoundingClientRect().height ?? 0, 0)
+              Math.ceil(
+                Math.max(doc.body?.scrollHeight ?? 0, doc.body?.getBoundingClientRect().height ?? 0, 0),
+              )
             const imgs = Array.from(doc.querySelectorAll('img')).filter(
               (im) => !(im as HTMLImageElement).complete,
             )
