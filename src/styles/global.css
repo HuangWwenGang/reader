@@ -296,9 +296,12 @@ button {
 }
 
 .float-ctrl.menu {
-  bottom: max(16px, env(safe-area-inset-bottom));
-  right: 16px;
-  font-size: 18px;
+  /* larger & pulled in from the corner so it's an easy thumb target */
+  bottom: max(30px, calc(env(safe-area-inset-bottom) + 22px));
+  right: 26px;
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
 }
 
 .float-progress {
@@ -382,6 +385,20 @@ button {
   background: rgba(127, 127, 127, 0.16);
 }
 
+/* each row fades up in sequence as the menu opens */
+.reader-menu .menu-item {
+  animation: menuItemIn 0.26s ease both;
+}
+.reader-menu .menu-item:nth-of-type(1) {
+  animation-delay: 0.04s;
+}
+.reader-menu .menu-item:nth-of-type(2) {
+  animation-delay: 0.09s;
+}
+.reader-menu .menu-item:nth-of-type(3) {
+  animation-delay: 0.14s;
+}
+
 .menu-val {
   color: var(--muted);
   font-size: 14px;
@@ -435,6 +452,28 @@ button {
   to {
     opacity: 1;
     transform: translate(-50%, -100%) scale(1);
+  }
+}
+/* centered modal pop (editor + floating panels) */
+@keyframes editorPop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+/* staggered reveal of menu rows */
+@keyframes menuItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 @keyframes slideInLeft {
@@ -525,41 +564,49 @@ button {
 }
 
 .editor {
+  /* centered, roomy card — easy to read your quote + write a longer thought */
   position: fixed;
   z-index: 60;
-  width: min(360px, calc(100vw - 24px));
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(540px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   /* frosted "liquid glass" material */
   background: var(--glass);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
   backdrop-filter: blur(30px) saturate(180%);
   border: 0.5px solid rgba(255, 255, 255, 0.14);
-  border-radius: 24px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.32);
-  padding: 16px;
+  border-radius: 26px;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.4);
+  padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  transform-origin: top center;
-  animation: popIn 0.18s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  gap: 16px;
+  transform-origin: center;
+  animation: editorPop 0.28s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .editor-quote {
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 15px;
+  color: var(--ink);
+  opacity: 0.78;
   border-left: 3px solid var(--accent);
-  padding-left: 10px;
-  max-height: 4.5em;
-  overflow: hidden;
-  line-height: 1.5;
+  padding-left: 12px;
+  max-height: 7.5em;
+  overflow-y: auto;
+  line-height: 1.6;
 }
 
 .editor textarea {
   width: 100%;
-  min-height: 92px;
+  min-height: 150px;
   resize: none;
   border: none;
-  border-radius: 14px;
-  padding: 12px 13px;
+  border-radius: 16px;
+  padding: 14px 15px;
   font: inherit;
   /* 16px avoids iOS auto-zoom when the field is focused */
   font-size: 16px;
@@ -648,32 +695,38 @@ button {
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.32);
   z-index: 40;
   animation: fadeIn 0.2s ease both;
 }
 
+/* floating glass window (centered), not a side drawer */
 .panel {
   position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(360px, 86vw);
-  background: var(--card);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, 92vw);
+  max-height: 78vh;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
   z-index: 41;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow);
-  padding-top: env(safe-area-inset-top);
-  animation: slideInLeft 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  overflow: hidden;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.4);
+  animation: editorPop 0.26s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 10px;
-  border-bottom: 1px solid var(--line);
+  padding: 16px 16px 12px;
+  border-bottom: 0.5px solid rgba(127, 127, 127, 0.2);
 }
 
 .panel-header h2 {
@@ -688,25 +741,29 @@ button {
 }
 
 .toc-item {
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--line);
-  font-size: 14px;
-  line-height: 1.4;
+  padding: 13px 18px;
+  border-bottom: 0.5px solid rgba(127, 127, 127, 0.16);
+  font-size: 15px;
+  line-height: 1.45;
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.toc-item:hover {
-  background: var(--paper);
+.toc-item:hover,
+.toc-item:active {
+  background: rgba(127, 127, 127, 0.14);
 }
 
 .note-item {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 14px 18px;
+  border-bottom: 0.5px solid rgba(127, 127, 127, 0.16);
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.note-item:hover {
-  background: var(--paper);
+.note-item:hover,
+.note-item:active {
+  background: rgba(127, 127, 127, 0.14);
 }
 
 .note-text {

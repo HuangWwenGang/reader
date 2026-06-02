@@ -1,6 +1,5 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AnchorRect } from '../lib/geometry'
-import { placePopup } from '../lib/geometry'
 import { TAG_COLORS, TAGS } from '../lib/tags'
 
 export interface EditorTarget {
@@ -28,14 +27,9 @@ export default function HighlightEditor({
   const [tag, setTag] = useState<string | undefined>(target.tag)
   const ref = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
   const isExisting = !!target.highlightId
 
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    setPos(placePopup(target.anchor, rect.width, rect.height))
+  useEffect(() => {
     if (target.autoFocus) {
       const ta = textareaRef.current
       if (ta) {
@@ -52,12 +46,7 @@ export default function HighlightEditor({
   }
 
   return (
-    <div
-      ref={ref}
-      className="editor"
-      style={pos ? { left: pos.left, top: pos.top } : { left: -9999, top: -9999 }}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div ref={ref} className="editor" onClick={(e) => e.stopPropagation()}>
       <div className="editor-quote">{target.text}</div>
       <textarea
         ref={textareaRef}

@@ -60,7 +60,8 @@ async function dragSelectLine() {
   await page.mouse.move(box.x + box.width * 0.8, y, { steps: 8 })
   await page.mouse.move(box.x + box.width * 0.8, y + 18, { steps: 4 })
   await page.mouse.up()
-  await page.waitForTimeout(500)
+  // selection now opens the editor only after the gesture settles (~420ms)
+  await page.waitForTimeout(900)
 }
 
 try {

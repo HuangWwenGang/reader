@@ -501,6 +501,10 @@ export class VirtualReader {
     if (!sec) return
     const i = this.sections.findIndex((s) => s.index === sec.index)
     if (i < 0) return
+    // brief cross-fade so the jump feels intentional, not a hard cut
+    const sc = this.scroller
+    sc.style.transition = 'none'
+    sc.style.opacity = '0'
     // tear down the current window, mount the target fresh
     for (const idx of Array.from(this.mounted.keys())) this.removeSection(idx, false)
     this.mounted.clear()
@@ -541,6 +545,11 @@ export class VirtualReader {
     this.correcting = false
     this.anchorIndex = i
     this.fillWindow()
+    // fade the freshly-positioned content back in
+    requestAnimationFrame(() => {
+      sc.style.transition = 'opacity 0.3s ease'
+      sc.style.opacity = '1'
+    })
     this.emitRelocate()
   }
 
@@ -587,11 +596,23 @@ export class VirtualReader {
   }
 
   private wireDoc(i: number, doc: Document) {
-    let selTimer: number | undefined
-    doc.addEventListener('selectionchange', () => {
-      clearTimeout(selTimer)
-      selTimer = window.setTimeout(() => this.handleSelection(i, doc), 220)
-    })
+    // Only pop the editor AFTER the selection gesture ends and settles — never
+    // mid-drag. While the user is still dragging (or adjusting the iOS handles),
+    // `selectionchange` keeps firing and cancels any pending pop; when they lift
+    // (mouseup/touchend) we wait a beat, then open. This stops the "it pops up
+    // before I've finished selecting" problem.
+    let settle: number | undefined
+    const SETTLE = 420
+    const arm = () => {
+      window.clearTimeout(settle)
+      const sel = doc.getSelection()
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+      settle = window.setTimeout(() => this.handleSelection(i, doc), SETTLE)
+    }
+    doc.addEventListener('selectionchange', () => window.clearTimeout(settle))
+    doc.addEventListener('mouseup', arm)
+    doc.addEventListener('touchend', arm)
+    doc.addEventListener('pointerup', arm)
     doc.addEventListener('click', (e: MouseEvent) => this.handleClick(i, doc, e))
   }
 

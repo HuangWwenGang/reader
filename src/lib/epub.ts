@@ -66,11 +66,11 @@ export function themeRules(settings: Settings): object {
   // night text brightness is user-adjustable
   const ink = settings.theme === 'night' ? nightInk(settings.brightness) : c.ink
   const lh = String(settings.lineHeight)
-  const ls = `${settings.letterSpacing}em`
+  const ls = `calc(0.03em + ${settings.letterSpacing}em)`
   const align = settings.justify ? 'justify' : 'start'
   const font = FONTS[settings.fontFamily]
   const fontRule = font ? { 'font-family': `${font} !important` } : {}
-  const weightRule = settings.bold ? { 'font-weight': '600 !important' } : {}
+  const weightRule = settings.bold ? { 'font-weight': '500 !important' } : {}
   return {
     html: { background: `${c.bg} !important` },
     body: {
@@ -173,8 +173,13 @@ export function readerCss(settings: Settings): string {
   const ink = settings.theme === 'night' ? nightInk(settings.brightness) : c.ink
   const font = FONTS[settings.fontFamily]
   const fontDecl = font ? `font-family:${font} !important;` : ''
-  const weightDecl = settings.bold ? 'font-weight:600 !important;' : ''
+  // PingFang at 600 looks cramped/glued on CJK; 500 (medium) stays crisp while
+  // giving each glyph room to breathe.
+  const weightDecl = settings.bold ? 'font-weight:500 !important;' : ''
   const align = settings.justify ? 'justify' : 'start'
+  // a small baseline tracking so CJK glyphs never visually stick together,
+  // on top of whatever extra spacing the user dials in.
+  const ls = `calc(0.03em + ${settings.letterSpacing}em)`
   return `
     html { background:${c.bg} !important; color-scheme: light; height:auto !important; }
     body {
@@ -182,13 +187,14 @@ export function readerCss(settings: Settings): string {
       margin:0 !important; height:auto !important;
       padding:${settings.margin}% ${settings.margin}% 6% !important;
       line-height:${settings.lineHeight} !important;
-      letter-spacing:${settings.letterSpacing}em !important;
+      letter-spacing:${ls} !important;
       font-size:${settings.fontScale}% !important;
       ${fontDecl}${weightDecl}
       -webkit-text-size-adjust:100% !important;
+      -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
     }
     p,li,blockquote,dd,h1,h2,h3,h4,h5,h6,span,div,td,th,a { color:${ink} !important; ${fontDecl} }
-    p,li,blockquote,dd { line-height:${settings.lineHeight} !important; letter-spacing:${settings.letterSpacing}em !important; text-align:${align} !important; ${weightDecl} }
+    p,li,blockquote,dd { line-height:${settings.lineHeight} !important; letter-spacing:${ls} !important; text-align:${align} !important; ${weightDecl} }
     a,a:link,a:visited { color:${c.link} !important; }
     img,svg,video { max-width:100% !important; height:auto !important; }
     ::selection { background: rgba(140,140,140,0.4); }

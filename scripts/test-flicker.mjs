@@ -25,7 +25,7 @@ try {
   await p.mouse.move(box.x + box.width * 0.8, y, { steps: 8 })
   await p.mouse.move(box.x + box.width * 0.8, y + 18, { steps: 4 })
   await p.mouse.up()
-  await p.waitForTimeout(600)
+  await p.waitForTimeout(900)
   await p.locator('.editor textarea').fill('flicker test')
   await p.locator('.editor .ios-btn.primary', { hasText: '保存' }).click()
   await p.waitForTimeout(400)
