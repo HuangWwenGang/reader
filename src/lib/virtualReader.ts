@@ -228,14 +228,27 @@ export class VirtualReader {
           const doc = iframe.contentDocument
           if (!doc) return resolve(0)
           this.injectCss(doc)
-          requestAnimationFrame(() => {
-            const h = Math.max(
+          const read = () =>
+            Math.max(
               doc.body?.scrollHeight ?? 0,
               doc.body?.getBoundingClientRect().height ?? 0,
               0,
             )
-            resolve(h)
-          })
+          // wait for images so image-heavy chapters get a correct cached height
+          const imgs = Array.from(doc.querySelectorAll('img')).filter(
+            (im) => !(im as HTMLImageElement).complete,
+          )
+          const done = () => requestAnimationFrame(() => resolve(read()))
+          if (imgs.length === 0) return done()
+          let left = imgs.length
+          const tick = () => {
+            if (--left <= 0) done()
+          }
+          for (const im of imgs) {
+            im.addEventListener('load', tick, { once: true })
+            im.addEventListener('error', tick, { once: true })
+          }
+          window.setTimeout(done, 1500) // don't block forever on a slow image
         } catch {
           resolve(0)
         }
@@ -344,6 +357,7 @@ export class VirtualReader {
       right: '0',
       top: `${this.offsets[i]}px`,
       height: `${this.heights[i]}px`,
+      overflow: 'hidden', // never let a chapter's content spill into the next
     })
     const iframe = document.createElement('iframe')
     Object.assign(iframe.style, {
@@ -405,10 +419,14 @@ export class VirtualReader {
         } catch {
           /* ignore */
         }
-        // a few delayed catches for anything async we missed
-        window.setTimeout(remeasure, 200)
-        window.setTimeout(remeasure, 700)
-        window.setTimeout(remeasure, 1800)
+        // the iframe window 'load' fires after subresources (images) settle
+        try {
+          doc.defaultView?.addEventListener('load', remeasure, { once: true })
+        } catch {
+          /* ignore */
+        }
+        // delayed catches for anything async we missed (slow images, etc.)
+        for (const t of [200, 700, 1800, 3500, 6000]) window.setTimeout(remeasure, t)
         try {
           m.ro = new ResizeObserver(remeasure)
           m.ro.observe(doc.body ?? doc.documentElement)
