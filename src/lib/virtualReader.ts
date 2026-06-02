@@ -23,8 +23,8 @@ import { rangeToAnchor, type AnchorRect } from './geometry'
 import { colorForTag } from './tags'
 import type { Highlight } from './types'
 
-const BUFFER = 1.5 // load/keep chapters within ±this many screens of the viewport
-const RECYCLE = 2.5 // recycle chapters beyond ±this many screens
+const BUFFER = 3 // load/keep chapters within ±this many screens of the viewport
+const RECYCLE = 5 // recycle chapters beyond ±this many screens
 const SAVE_DEBOUNCE = 300
 
 export interface RelocateInfo {
@@ -42,6 +42,7 @@ interface Mounted {
   ro?: ResizeObserver
   loaded: Promise<void>
   drawn: { id: string; rects: DOMRect[] }[]
+  measured?: boolean // has had its first real (content) measure
 }
 
 export interface VirtualReaderCallbacks {
@@ -371,21 +372,55 @@ export class VirtualReader {
       ),
     )
     if (Math.abs(h - this.heights[i]) < 1) return
-    const delta = h - this.heights[i]
+    // Capture what's at the viewport top BEFORE resizing, so we can pin it after
+    // (scroll anchoring) — a height correction must never move what you're reading.
+    const anchor = this.captureAnchor()
     this.heights[i] = h
-    // if this chapter is entirely ABOVE the viewport, the browser just reflowed
-    // everything below down by `delta`; counter it so the reader doesn't jump.
-    const scTop = this.scroller.getBoundingClientRect().top
-    const above = m.el.getBoundingClientRect().bottom <= scTop + 1
     m.el.style.height = `${h}px`
-    if (above) {
-      this.correcting = true
-      this.scroller.scrollTop += delta
-      this.correcting = false
+    if (anchor) {
+      if (!m.measured && anchor.index === i && anchor.offset > h + 8) {
+        // First real measure of this chapter and the viewport top was sitting in
+        // its over-estimated tail (below where the real content ends). Rather
+        // than strand the reader mid-chapter / past the heading, bring the
+        // chapter's start to the top so they see the title first, as expected.
+        this.correcting = true
+        this.scroller.scrollTop = m.el.offsetTop
+        this.correcting = false
+      } else {
+        this.restoreAnchor(anchor)
+      }
     }
+    m.measured = true
     this.drawHighlights(i)
     this.scheduleCache()
     this.fillWindow()
+  }
+
+  // The section spanning the viewport top, and how far into it the top edge sits.
+  private captureAnchor(): { index: number; offset: number } | null {
+    const scTop = this.scroller.getBoundingClientRect().top
+    for (const [idx, m] of this.mounted) {
+      const r = m.el.getBoundingClientRect()
+      if (r.top <= scTop + 0.5 && r.bottom > scTop + 0.5) {
+        return { index: idx, offset: scTop - r.top }
+      }
+    }
+    return null
+  }
+
+  // Scroll so the captured section sits at the same offset under the viewport
+  // top again (cancels any shift caused by a height change above/at the top).
+  private restoreAnchor(a: { index: number; offset: number }) {
+    const m = this.mounted.get(a.index)
+    if (!m) return
+    const scTop = this.scroller.getBoundingClientRect().top
+    const now = scTop - m.el.getBoundingClientRect().top
+    const diff = a.offset - now
+    if (Math.abs(diff) > 0.5) {
+      this.correcting = true
+      this.scroller.scrollTop += diff
+      this.correcting = false
+    }
   }
 
   // ---- scroll / position ----
@@ -769,7 +804,16 @@ export class VirtualReader {
       visibility: 'hidden',
     } as any)
     this.container.appendChild(hidden)
-    for (let i = 0; i < this.sections.length; i++) {
+    // Measure in READING ORDER from the current position outward: the chapters
+    // you're about to scroll into get accurate heights first, so they mount at
+    // the right size (no over-estimated tail to drift through), then we backfill
+    // the earlier ones for a complete cache.
+    const start = this.firstLoaded
+    const N = this.sections.length
+    const order: number[] = []
+    for (let i = start; i < N; i++) order.push(i)
+    for (let i = 0; i < start; i++) order.push(i)
+    for (const i of order) {
       if (this.destroyed) break
       if (this.mounted.has(i)) continue
       let h = 0
