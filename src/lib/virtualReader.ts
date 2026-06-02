@@ -26,6 +26,10 @@ import type { Highlight } from './types'
 const BUFFER = 1.6 // load/keep chapters within ±this many screens of the viewport
 const RECYCLE = 2.6 // recycle chapters beyond ±this many screens
 const SAVE_DEBOUNCE = 300
+// Bump when readerCss changes the rendered metrics (weight/tracking/etc.) so old
+// height caches — measured with the previous CSS — are invalidated instead of
+// silently feeding wrong heights (which causes mid-read scroll corrections).
+const CSS_VERSION = 2
 
 export interface RelocateInfo {
   cfi?: string
@@ -75,6 +79,7 @@ export class VirtualReader {
   private isScrolling = false
   private scrollIdle: number | null = null
   private pendingMeasure = new Set<number>()
+  private needWindowFlush = false // a prepend/recycle-above was deferred
   private saveTimer: number | null = null
   private highlights: Highlight[] = []
   private toc: { href: string; label: string }[] = []
@@ -99,7 +104,7 @@ export class VirtualReader {
     const w = Math.round(this.scroller?.clientWidth ?? this.container.clientWidth)
     return [
       s.fontScale, s.lineHeight, s.letterSpacing, s.margin, s.fontFamily,
-      s.bold ? 1 : 0, w,
+      s.bold ? 1 : 0, w, `v${CSS_VERSION}`,
     ].join('|')
   }
 
@@ -333,13 +338,30 @@ export class VirtualReader {
     const vh = this.scroller.clientHeight
     const N = this.sections.length
     let guard = 0
-    // append below
+    // append below — safe during scrolling (only adds content below, never
+    // touches scrollTop). This keeps look-ahead working even mid-fling.
     while (
       this.lastLoaded < N - 1 &&
       this.scroller.scrollHeight - (this.scroller.scrollTop + vh) < BUFFER * vh &&
       guard++ < 40
     ) {
       this.appendBottom(this.lastLoaded + 1)
+    }
+    // recycle far below — fromTop=false, no scrollTop change → safe anytime
+    const scBottom = this.scroller.getBoundingClientRect().bottom
+    while (this.lastLoaded > this.anchorIndex + 1) {
+      const m = this.mounted.get(this.lastLoaded)
+      if (m && m.el.getBoundingClientRect().top > scBottom + RECYCLE * vh) {
+        this.removeSection(this.lastLoaded, false)
+        this.lastLoaded--
+      } else break
+    }
+    // The remaining operations PREPEND or RECYCLE-ABOVE, which both move
+    // scrollTop to keep the view put. On iOS, writing scrollTop during a
+    // momentum scroll teleports the page — so defer them until scrolling stops.
+    if (this.isScrolling) {
+      this.needWindowFlush = true
+      return
     }
     // prepend above
     guard = 0
@@ -349,15 +371,6 @@ export class VirtualReader {
       guard++ < 40
     ) {
       this.prependTop(this.firstLoaded - 1)
-    }
-    // recycle far below
-    const scBottom = this.scroller.getBoundingClientRect().bottom
-    while (this.lastLoaded > this.anchorIndex + 1) {
-      const m = this.mounted.get(this.lastLoaded)
-      if (m && m.el.getBoundingClientRect().top > scBottom + RECYCLE * vh) {
-        this.removeSection(this.lastLoaded, false)
-        this.lastLoaded--
-      } else break
     }
     // recycle far above
     const scTop = this.scroller.getBoundingClientRect().top
@@ -435,6 +448,10 @@ export class VirtualReader {
     this.scrollIdle = window.setTimeout(() => {
       this.isScrolling = false
       this.flushPendingMeasures()
+      if (this.needWindowFlush) {
+        this.needWindowFlush = false
+        this.fillWindow() // run the deferred prepend / recycle-above now
+      }
     }, 160)
     if (this.rafPending) return
     this.rafPending = true
