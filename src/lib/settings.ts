@@ -25,16 +25,17 @@ export function nightInk(brightness: number): string {
   return `#${h}${h}${h}`
 }
 
-// Font stacks for the book content.
+// Font stacks for the book content. `sans` puts PingFang SC first so CJK text
+// uses the round, smooth system font on Apple devices (not the squarer Heiti).
 export const FONTS: Record<FontKey, string> = {
   default: '', // keep the book's own fonts
-  sans: '-apple-system, "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif',
-  serif: 'Georgia, "Songti SC", "SimSun", "Noto Serif CJK SC", serif',
+  sans: '"PingFang SC", -apple-system, "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+  serif: '"Songti SC", Georgia, "SimSun", "Noto Serif CJK SC", serif',
 }
 
 export const FONT_LABELS: Record<FontKey, string> = {
   default: '默认',
-  sans: '黑体',
+  sans: '苹方',
   serif: '宋体',
 }
 
