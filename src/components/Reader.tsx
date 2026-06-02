@@ -122,6 +122,7 @@ export default function Reader({
   const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
   const [showSettings, setShowSettings] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false) // corner menu popover
   const [barVisible, setBarVisible] = useState(true) // immersive: tap toggles chrome
   const settingsRef = useRef(settings)
   const prevFlowRef = useRef(settings.flow)
@@ -576,30 +577,60 @@ export default function Reader({
 
   return (
     <div className={'reader' + (barVisible ? '' : ' immersive')}>
-      <div className="reader-bar">
-        <button className="icon-btn" onClick={onClose} title="返回书架">
-          ‹
-        </button>
-        <button className="icon-btn" onClick={() => setPanel('toc')} title="目录">
-          ☰
-        </button>
-        <div className="title">{title}</div>
-        <div className="spacer" />
-        <button
-          className="icon-btn"
-          onClick={() => setShowSettings(true)}
-          title="显示设置"
-        >
-          Aa
-        </button>
-        <button className="icon-btn" onClick={() => setPanel('notes')} title="笔记">
-          ✦
-        </button>
-      </div>
-
       <div className="reader-stage" ref={stageRef} />
 
-      <div className="reader-progress">{progress}</div>
+      {/* Apple-Books-style floating controls: corners only, so text isn't
+          covered. They fade out in immersive mode (tap content to toggle). */}
+      <button className="float-ctrl back" onClick={onClose} aria-label="返回书架">
+        ‹
+      </button>
+      {progress && <div className="float-progress">{progress}</div>}
+      <button
+        className="float-ctrl menu"
+        onClick={() => setMenuOpen(true)}
+        aria-label="菜单"
+      >
+        ☰
+      </button>
+
+      {menuOpen && (
+        <>
+          <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+          <div className="reader-menu">
+            <div className="reader-menu-title">{title}</div>
+            <button
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false)
+                setPanel('toc')
+              }}
+            >
+              <span>目录</span>
+              <span className="menu-val">{progress}</span>
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false)
+                setPanel('notes')
+              }}
+            >
+              <span>划线 / 笔记</span>
+              <span className="menu-val">{highlights.length}</span>
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => {
+                setMenuOpen(false)
+                setShowSettings(true)
+              }}
+            >
+              <span>主题与设置</span>
+              <span className="menu-val">Aa</span>
+            </button>
+          </div>
+        </>
+      )}
 
       {editor && (
         <>

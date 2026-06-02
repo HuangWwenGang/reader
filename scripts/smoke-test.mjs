@@ -104,7 +104,8 @@ try {
   // reload — highlight + note survive, appear in notes list
   await page.reload({ waitUntil: 'networkidle' })
   await openBook()
-  await page.locator('.reader-bar .icon-btn', { hasText: '✦' }).click()
+  await page.locator('.float-ctrl.menu').click()
+  await page.locator('.menu-item', { hasText: '笔记' }).click()
   await page.locator('.note-item').first().waitFor({ timeout: 5000 })
   const noteText = await page.locator('.note-thought').first().textContent()
   check(noteText?.includes('这是一个测试想法'), 'note survives reload, shows in 笔记')
@@ -118,14 +119,15 @@ try {
   )
 
   // TOC jump to chapter 2
-  await page.locator('.reader-bar .icon-btn', { hasText: '☰' }).click()
+  await page.locator('.float-ctrl.menu').click()
+  await page.locator('.menu-item', { hasText: '目录' }).click()
   await page.locator('.toc-item').nth(1).click()
   await page.waitForTimeout(1200)
   check((await stageText()).includes('第二章'), 'TOC jump navigates to a chapter')
 
   // delete book + its highlights
   page.on('dialog', (d) => d.accept())
-  await page.locator('.reader-bar .icon-btn').first().click() // back to shelf
+  await page.locator('.float-ctrl.back').click() // back to shelf
   await page.locator('.book-card').first().waitFor()
   await page.locator('.book-card').first().hover()
   await page.locator('.book-delete').first().click()

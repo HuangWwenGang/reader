@@ -264,6 +264,129 @@ button {
   height: 100%;
 }
 
+/* ---------- Apple-Books-style floating controls ---------- */
+
+.float-ctrl {
+  position: fixed;
+  z-index: 30;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  transition: opacity 0.25s ease, transform 0.2s ease;
+}
+
+.float-ctrl:active {
+  transform: scale(0.92);
+}
+
+.float-ctrl.back {
+  top: max(12px, env(safe-area-inset-top));
+  left: 14px;
+}
+
+.float-ctrl.menu {
+  bottom: max(16px, env(safe-area-inset-bottom));
+  right: 16px;
+  font-size: 18px;
+}
+
+.float-progress {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(22px, env(safe-area-inset-bottom));
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.reader.immersive .float-ctrl,
+.reader.immersive .float-progress {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* corner glass menu (like Apple Books) */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+}
+
+.reader-menu {
+  position: fixed;
+  z-index: 41;
+  right: 14px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  width: min(290px, 82vw);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.34);
+  animation: popIn 0.18s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  transform-origin: bottom right;
+}
+
+.reader-menu-title {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 12px 16px 8px;
+  border-bottom: 0.5px solid rgba(127, 127, 127, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 0.5px solid rgba(127, 127, 127, 0.18);
+  color: var(--ink);
+  font-size: 16px;
+  text-align: left;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:active {
+  background: rgba(127, 127, 127, 0.16);
+}
+
+.menu-val {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .editor-backdrop {
   position: fixed;
   inset: 0;
