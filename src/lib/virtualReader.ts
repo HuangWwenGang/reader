@@ -16,6 +16,7 @@
 // windowed scroll). epub.js still does parsing + CFI.
 import { EpubCFI } from 'epubjs'
 import type { Settings } from './settings'
+import { THEMES } from './settings'
 import { readerCss } from './epub'
 import { getHeights, saveHeights } from './db'
 import { rangeToAnchor, type AnchorRect } from './geometry'
@@ -100,6 +101,8 @@ export class VirtualReader {
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
       position: 'absolute', inset: '0', overflowY: 'auto', overflowX: 'hidden',
+      // themed backdrop so any momentary gap shows the page color, never white
+      background: THEMES[this.settings.theme].bg,
       // NOTE: deliberately NOT setting `-webkit-overflow-scrolling: touch`.
       // It's deprecated (iOS 13+ scrolls with momentum by default) and forces
       // the scroller into a cached tile layer that iOS translates instead of
@@ -201,10 +204,16 @@ export class VirtualReader {
       width: '100%',
       height: `${this.heights[i]}px`,
       overflow: 'hidden',
+      // themed backdrop shows while the iframe is still hidden (loading), so the
+      // section is never a white rectangle
+      background: THEMES[this.settings.theme].bg,
     })
     const iframe = document.createElement('iframe')
     Object.assign(iframe.style, {
       width: '100%', height: '100%', border: '0', display: 'block',
+      // hidden until the real chapter content is in — avoids the white
+      // about:blank flash (the "flicker") before srcdoc paints
+      visibility: 'hidden',
     })
     iframe.setAttribute('scrolling', 'no')
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -230,6 +239,7 @@ export class VirtualReader {
           wired = true
           m.doc = doc
           this.injectCss(doc)
+          iframe.style.visibility = 'visible'
           this.wireDoc(i, doc)
           const remeasure = () => this.measure(i)
           requestAnimationFrame(remeasure)
@@ -565,6 +575,11 @@ export class VirtualReader {
   async applySettings(settings: Settings) {
     const old = this.settings
     this.settings = settings
+    if (old.theme !== settings.theme) {
+      const bg = THEMES[settings.theme].bg
+      this.scroller.style.background = bg
+      for (const [, m] of this.mounted) m.el.style.background = bg
+    }
     const layoutChanged =
       old.fontScale !== settings.fontScale ||
       old.lineHeight !== settings.lineHeight ||

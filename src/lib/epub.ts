@@ -181,7 +181,11 @@ export function readerCss(settings: Settings): string {
   // on top of whatever extra spacing the user dials in.
   const ls = `calc(0.03em + ${settings.letterSpacing}em)`
   return `
-    html { background:${c.bg} !important; color-scheme: light; height:auto !important; }
+    /* height:100% (not auto) so the root box fills the whole iframe and its
+       background paints the entire canvas — otherwise, when the section box is
+       briefly taller than the content, the area below shows the iframe's white
+       default canvas (the "white bar" between chapters). */
+    html { background:${c.bg} !important; color-scheme: light; height:100% !important; }
     body {
       background:${c.bg} !important; color:${ink} !important;
       margin:0 !important; height:auto !important;
