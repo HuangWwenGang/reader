@@ -5,3 +5,4 @@ _foliate-src
 *.local
 *.tsbuildinfo
 .DS_Store
+_fd.mjs
