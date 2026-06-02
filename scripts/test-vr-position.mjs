@@ -18,12 +18,23 @@ const dbLoc = () => p.evaluate(async () => {
 const topText = () => p.evaluate(() => {
   const sc = document.querySelector('.reader-stage > div')
   if (!sc) return ''
-  // find the iframe whose slot spans the viewport top
-  for (const slot of sc.querySelectorAll(':scope > div > div')) {
-    const r = slot.getBoundingClientRect()
-    if (r.top <= sc.getBoundingClientRect().top + 5 && r.bottom > sc.getBoundingClientRect().top + 5) {
-      const ifr = slot.querySelector('iframe')
-      try { return ifr?.contentDocument?.body?.innerText?.slice(0, 24) } catch { return '' }
+  const scTop = sc.getBoundingClientRect().top
+  // v2 flow layout: scroller > section-el > iframe. Find the section el whose
+  // box spans the viewport top, then read the text line nearest that edge.
+  for (const el of sc.querySelectorAll(':scope > div')) {
+    const r = el.getBoundingClientRect()
+    if (r.top <= scTop + 5 && r.bottom > scTop + 5) {
+      const ifr = el.querySelector('iframe')
+      try {
+        const doc = ifr?.contentDocument
+        const localY = scTop + 5 - r.top
+        // find the block element crossing localY inside the iframe content
+        for (const node of doc.body.querySelectorAll('p,h1,h2,h3,li,blockquote')) {
+          const nr = node.getBoundingClientRect()
+          if (nr.top <= localY && nr.bottom > localY) return (node.innerText || '').trim().slice(0, 24)
+        }
+        return (doc?.body?.innerText || '').trim().slice(0, 24)
+      } catch { return '' }
     }
   }
   return ''

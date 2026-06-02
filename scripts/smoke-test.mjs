@@ -11,6 +11,9 @@ const log = (...a) => console.log('•', ...a)
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 420, height: 760 } })
 page.on('pageerror', (e) => console.log('  [pageerror]', e.message))
+page.on('console', (m) => {
+  if (m.type() === 'error') console.log('  [browser]', m.text().slice(0, 160))
+})
 
 let failed = false
 const check = (cond, msg) => {
