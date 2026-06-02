@@ -575,12 +575,28 @@ export class VirtualReader {
       }
     }
     let intra = 0
-    if (m?.doc && target.startsWith('epubcfi(')) {
-      try {
-        const range = new EpubCFI(target).toRange(m.doc)
-        if (range) intra = Math.max(0, range.getBoundingClientRect().top)
-      } catch {
-        /* ignore */
+    if (m?.doc) {
+      if (target.startsWith('epubcfi(')) {
+        try {
+          const range = new EpubCFI(target).toRange(m.doc)
+          if (range) intra = Math.max(0, range.getBoundingClientRect().top)
+        } catch {
+          /* ignore */
+        }
+      } else if (target.includes('#')) {
+        // TOC sub-items (2.1, 2.2, …) usually share the chapter file and differ
+        // only by an in-page anchor (#id). Resolve that anchor to its element.
+        const frag = target.slice(target.indexOf('#') + 1)
+        let el: Element | null = null
+        try {
+          el =
+            m.doc.getElementById(decodeURIComponent(frag)) ??
+            m.doc.getElementById(frag) ??
+            m.doc.querySelector(`[name="${frag}"]`)
+        } catch {
+          el = null
+        }
+        if (el) intra = Math.max(0, (el as HTMLElement).getBoundingClientRect().top)
       }
     }
     this.anchor = { index: i, intra }

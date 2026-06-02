@@ -63,7 +63,15 @@ const para = (n) =>
   `The quick brown fox jumps over the lazy dog. 记录的物理成本越接近于零，越愿意记。</p>`
 
 const ch1 = chapter('第一章 开始', Array.from({ length: 8 }, (_, i) => para(i + 1)).join('\n'))
-const ch2 = chapter('第二章 继续', Array.from({ length: 8 }, (_, i) => para(i + 9)).join('\n'))
+// ch2 has an in-page anchor (id="sec2") on the 5th paragraph, to test sub-chapter
+// (fragment) navigation like "2.3 委屈".
+const ch2 = chapter(
+  '第二章 继续',
+  Array.from({ length: 8 }, (_, i) => {
+    const p = para(i + 9)
+    return i === 4 ? p.replace('<p>', '<p id="sec2">★锚点小节 ') : p
+  }).join('\n'),
+)
 
 const files = [
   { name: 'mimetype', data: 'application/epub+zip' },
@@ -101,7 +109,9 @@ const files = [
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>目录</title></head>
 <body><nav epub:type="toc"><ol>
   <li><a href="ch1.xhtml">第一章 开始</a></li>
-  <li><a href="ch2.xhtml">第二章 继续</a></li>
+  <li><a href="ch2.xhtml">第二章 继续</a>
+    <ol><li><a href="ch2.xhtml#sec2">2.1 锚点小节</a></li></ol>
+  </li>
 </ol></nav></body></html>`,
   },
   { name: 'OEBPS/ch1.xhtml', data: ch1 },
