@@ -2,7 +2,6 @@ import {
   FONT_LABELS,
   THEME_LABELS,
   THEMES,
-  type FlowMode,
   type FontKey,
   type Settings,
   type ThemeName,
@@ -83,21 +82,6 @@ export default function SettingsSheet({
                 onClick={() => onChange({ fontFamily: f })}
               >
                 {FONT_LABELS[f]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="sheet-row">
-          <span className="sheet-label">排版</span>
-          <div className="seg">
-            {(['scrolled', 'paginated'] as FlowMode[]).map((f) => (
-              <button
-                key={f}
-                className={'seg-btn' + (settings.flow === f ? ' active' : '')}
-                onClick={() => onChange({ flow: f })}
-              >
-                {f === 'scrolled' ? '流式滚动' : '左右翻页'}
               </button>
             ))}
           </div>

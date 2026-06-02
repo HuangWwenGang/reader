@@ -166,6 +166,36 @@ export function tuneContinuous(rendition: any): void {
   }
 }
 
+// CSS string (for injecting a <style> into a section iframe in the virtual
+// scroller). Same look as themeRules but serialized.
+export function readerCss(settings: Settings): string {
+  const c = THEMES[settings.theme]
+  const ink = settings.theme === 'night' ? nightInk(settings.brightness) : c.ink
+  const font = FONTS[settings.fontFamily]
+  const fontDecl = font ? `font-family:${font} !important;` : ''
+  const weightDecl = settings.bold ? 'font-weight:600 !important;' : ''
+  const align = settings.justify ? 'justify' : 'start'
+  return `
+    html { background:${c.bg} !important; color-scheme: light; }
+    body {
+      background:${c.bg} !important; color:${ink} !important;
+      margin:0 !important;
+      padding:${settings.margin}% ${settings.margin}% 0 !important;
+      line-height:${settings.lineHeight} !important;
+      letter-spacing:${settings.letterSpacing}em !important;
+      font-size:${settings.fontScale}% !important;
+      ${fontDecl}${weightDecl}
+      -webkit-text-size-adjust:100% !important;
+    }
+    p,li,blockquote,dd,h1,h2,h3,h4,h5,h6,span,div,td,th,a { color:${ink} !important; ${fontDecl} }
+    p,li,blockquote,dd { line-height:${settings.lineHeight} !important; letter-spacing:${settings.letterSpacing}em !important; text-align:${align} !important; ${weightDecl} }
+    a,a:link,a:visited { color:${c.link} !important; }
+    img,svg,video { max-width:100% !important; height:auto !important; }
+    ::selection { background: rgba(140,140,140,0.4); }
+    pre { white-space: pre-wrap !important; }
+  `
+}
+
 let comparator: ((a: string, b: string) => number) | null = null
 export function getCFIComparator(): (a: string, b: string) => number {
   if (!comparator) {

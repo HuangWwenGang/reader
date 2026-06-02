@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs",
     "sample": "node scripts/make-sample-epub.mjs",
-    "test:smoke": "node scripts/smoke-test.mjs"
+    "test:smoke": "node scripts/smoke-test.mjs && node scripts/test-flicker.mjs && node scripts/test-vr-position.mjs"
   },
   "dependencies": {
     "epubjs": "^0.3.93",

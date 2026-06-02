@@ -7,16 +7,9 @@ import {
   updateBookLocation,
   saveBookLocations,
 } from '../lib/db'
-import {
-  getCFIComparator,
-  openBookFromBuffer,
-  renderOptions,
-  themeRules,
-  tuneContinuous,
-  type Book,
-} from '../lib/epub'
-import { rangeToAnchor, type AnchorRect } from '../lib/geometry'
-import { colorForTag } from '../lib/tags'
+import { getCFIComparator, openBookFromBuffer } from '../lib/epub'
+import { VirtualReader } from '../lib/virtualReader'
+import type { AnchorRect } from '../lib/geometry'
 import {
   applyTheme,
   loadSettings,
@@ -37,81 +30,14 @@ export default function Reader({
   onClose: () => void
 }) {
   const stageRef = useRef<HTMLDivElement>(null)
-  const bookRef = useRef<Book | null>(null)
-  const renditionRef = useRef<any>(null)
+  const engineRef = useRef<VirtualReader | null>(null)
+  const bookRef = useRef<any>(null)
   const highlightsRef = useRef<Highlight[]>([])
-  const saveTimerRef = useRef<number | null>(null)
   const lastCfiRef = useRef<string | undefined>(undefined)
   const lastProgRef = useRef<string>('')
-  // timestamp the editor opened, to ignore the ghost-click that opened it
   const editorOpenedRef = useRef(0)
-
-  const openEditor = useCallback((t: EditorTarget) => {
-    editorOpenedRef.current = Date.now()
-    setEditor(t)
-  }, [])
-
-  // flush the pending reading position immediately (e.g. on exit) so re-opening
-  // lands exactly where we left off instead of drifting
-  // Line-level position: epub.js's currentLocation() snaps to the *start of the
-  // topmost element* (paragraph-level). To restore to the exact line like native
-  // readers, we find the character at the very top of the visible reading area
-  // via caretRangeFromPoint and take its CFI.
-  const getPreciseCfi = useCallback((): string | undefined => {
-    const r = renditionRef.current
-    const stage = stageRef.current
-    if (!r || !stage) return undefined
-    let list: any[] = []
-    try {
-      const c = r.getContents()
-      list = Array.isArray(c) ? c : c ? [c] : []
-    } catch {
-      return undefined
-    }
-    const st = stage.getBoundingClientRect()
-    const probeY = st.top + 4 // just inside the top edge of the reading area
-    for (const contents of list) {
-      const doc: Document | undefined = contents?.document
-      const frameEl = doc?.defaultView?.frameElement as HTMLElement | null
-      if (!doc || !frameEl) continue
-      const fr = frameEl.getBoundingClientRect()
-      if (fr.top - 1 <= probeY && fr.bottom >= probeY) {
-        const localX = Math.max(2, st.left + st.width / 2 - fr.left)
-        const localY = probeY - fr.top
-        try {
-          const range = (doc as any).caretRangeFromPoint?.(localX, localY)
-          if (range) {
-            const cfi = contents.cfiFromRange(range)
-            if (cfi) return cfi
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    return undefined
-  }, [])
-
-  const flushLocation = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = null
-    }
-    // prefer line-precise position, then live currentLocation, then last cfi
-    let cfi = getPreciseCfi() ?? lastCfiRef.current
-    if (!cfi) {
-      try {
-        const loc = renditionRef.current?.currentLocation?.()
-        if (loc?.start?.cfi) cfi = loc.start.cfi
-      } catch {
-        /* ignore */
-      }
-    }
-    if (cfi) {
-      lastCfiRef.current = cfi
-      updateBookLocation(bookId, cfi).catch(() => {})
-    }
-  }, [bookId, getPreciseCfi])
+  const popupOpenRef = useRef(false)
+  const resumeCfiRef = useRef<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [toc, setToc] = useState<TocItem[]>([])
@@ -122,11 +48,9 @@ export default function Reader({
   const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
   const [showSettings, setShowSettings] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false) // corner menu popover
-  const [barVisible, setBarVisible] = useState(true) // immersive: tap toggles chrome
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [barVisible, setBarVisible] = useState(true)
   const settingsRef = useRef(settings)
-  const prevFlowRef = useRef(settings.flow)
-  const popupOpenRef = useRef(false)
 
   useEffect(() => {
     highlightsRef.current = highlights
@@ -135,55 +59,14 @@ export default function Reader({
     popupOpenRef.current = editor != null
   }, [editor])
 
-  // ---- annotation helpers (epub.js) ----
-  const drawHighlight = useCallback((h: Highlight) => {
-    const r = renditionRef.current
-    if (!r) return
-    try {
-      r.annotations.add(
-        'highlight',
-        h.cfi,
-        {},
-        () => openEditorForHighlight(h.id),
-        'hl',
-        {
-          fill: colorForTag(h.tag),
-          'fill-opacity': '0.3',
-          'mix-blend-mode': 'multiply',
-        },
-      )
-    } catch (e) {
-      console.warn('annotation add failed', e)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openEditor = useCallback((t: EditorTarget) => {
+    editorOpenedRef.current = Date.now()
+    setEditor(t)
   }, [])
 
-  const removeHighlightDraw = useCallback((cfi: string) => {
-    try {
-      renditionRef.current?.annotations.remove(cfi, 'highlight')
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  const openEditorForHighlight = useCallback((id: string) => {
+  const openEditorForHighlight = useCallback((id: string, anchor: AnchorRect) => {
     const h = highlightsRef.current.find((x) => x.id === id)
     if (!h) return
-    let anchor: AnchorRect | null = null
-    try {
-      const range = renditionRef.current?.getRange(h.cfi)
-      const doc = range?.startContainer?.ownerDocument as Document | undefined
-      if (doc && range) anchor = rangeToAnchor(doc, range)
-    } catch {
-      anchor = null
-    }
-    if (!anchor) {
-      anchor = {
-        centerX: window.innerWidth / 2,
-        top: window.innerHeight / 2,
-        bottom: window.innerHeight / 2,
-      }
-    }
     openEditor({
       highlightId: h.id,
       cfi: h.cfi,
@@ -191,103 +74,19 @@ export default function Reader({
       note: h.note ?? '',
       tag: h.tag,
       anchor,
-      autoFocus: false, // editing existing: just show popup, no keyboard
+      autoFocus: false,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [openEditor])
 
-  // ---- mount / remount the rendition ----
-  const mountRendition = useCallback(async (startCfi?: string) => {
-    const book = bookRef.current
-    const stage = stageRef.current
-    if (!book || !stage) return
-    if (renditionRef.current) {
-      try {
-        renditionRef.current.destroy()
-      } catch {
-        /* ignore */
-      }
-      renditionRef.current = null
+  const flushLocation = useCallback(() => {
+    const cfi = engineRef.current?.currentCfi() ?? lastCfiRef.current
+    if (cfi) {
+      lastCfiRef.current = cfi
+      updateBookLocation(bookId, cfi).catch(() => {})
     }
-    stage.innerHTML = ''
+  }, [bookId])
 
-    const rendition = book.renderTo(stage, renderOptions(settingsRef.current))
-    renditionRef.current = rendition
-    ;(window as any).rendition = rendition // for debugging position restore
-    rendition.themes.default(themeRules(settingsRef.current) as any)
-    rendition.themes.fontSize(`${settingsRef.current.fontScale}%`)
-
-    rendition.on('relocated', (location: any) => {
-      // save the line-precise cfi when we can, else the element-level one
-      const cfi = getPreciseCfi() ?? location?.start?.cfi
-      if (cfi) {
-        lastCfiRef.current = cfi
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-        const toSave = cfi
-        saveTimerRef.current = window.setTimeout(() => {
-          updateBookLocation(bookId, toSave).catch(console.error)
-        }, 250)
-      }
-      const pct = location?.start?.percentage
-      if (typeof pct === 'number') {
-        const label = `${Math.round(pct * 100)}%`
-        if (label !== lastProgRef.current) {
-          lastProgRef.current = label
-          setProgress(label)
-        }
-      }
-    })
-
-    // Selection → pop the editor DIRECTLY (no intermediate button). We collapse
-    // the native selection so iOS's Copy/Look-Up callout disappears; the editor's
-    // quote shows what was selected. Save creates the highlight; cancel discards.
-    rendition.on('selected', (cfiRange: string, contents: any) => {
-      if (popupOpenRef.current) return
-      let range: Range | null = null
-      try {
-        range = contents.range(cfiRange)
-      } catch {
-        range = null
-      }
-      const text = (range?.toString() ?? '').trim()
-      if (!range || !text) return
-      const anchor = rangeToAnchor(contents.document, range)
-      if (!anchor) return
-      try {
-        contents.window.getSelection()?.removeAllRanges()
-      } catch {
-        /* ignore */
-      }
-      openEditor({ cfi: cfiRange, text, note: '', tag: undefined, anchor })
-    })
-
-    // single tap in the reading area: dismiss the editor, else toggle the chrome
-    // (immersive). iOS reserves double-tap for word selection, so we use a tap.
-    rendition.on('rendered', (_section: any, view: any) => {
-      const doc: Document | undefined =
-        view?.document ?? view?.contents?.document
-      if (!doc || (doc as any).__tapBound) return
-      ;(doc as any).__tapBound = true
-      doc.addEventListener('click', (ev: MouseEvent) => {
-        const sel = doc.getSelection()
-        if (sel && !sel.isCollapsed) return
-        if ((ev.target as HTMLElement)?.closest?.('a[href]')) return
-        if (popupOpenRef.current) {
-          setEditor(null)
-          return
-        }
-        setBarVisible((v) => !v)
-      })
-    })
-
-    await rendition.display(startCfi || undefined)
-    // keep recently-read sections alive in scroll mode (smoother fast-scroll)
-    if (settingsRef.current.flow === 'scrolled') tuneContinuous(rendition)
-    for (const h of highlightsRef.current) drawHighlight(h)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, drawHighlight])
-
-  // ---- initial open ----
+  // ---- open the book ----
   useEffect(() => {
     let cancelled = false
     async function setup() {
@@ -298,7 +97,6 @@ export default function Reader({
       }
       if (cancelled) return
       setTitle(rec.title)
-      // ArrayBuffer is the current format; fall back to legacy Blob records.
       let buf: ArrayBuffer | null = rec.file ?? null
       const legacy = (rec as any).fileBlob as Blob | undefined
       if (!buf && legacy?.arrayBuffer) {
@@ -325,29 +123,36 @@ export default function Reader({
       const hs = await getHighlights(bookId)
       highlightsRef.current = hs
       setHighlights(hs)
-
       lastCfiRef.current = rec.lastLocation
-      await mountRendition(rec.lastLocation)
 
-      // Build (or load cached) the locations index so the bottom progress bar
-      // shows an accurate whole-book percentage. Deferred + cached so it doesn't
-      // jank the initial read and only runs once per book.
-      const refreshProgress = () => {
-        try {
-          const pct = renditionRef.current?.currentLocation?.()?.start?.percentage
-          if (typeof pct === 'number') {
-            const label = `${Math.round(pct * 100)}%`
+      const engine = new VirtualReader(book, stageRef.current!, settingsRef.current, {
+        onRelocate: ({ cfi, percentage, chapter }) => {
+          if (cfi) {
+            lastCfiRef.current = cfi
+            updateBookLocation(bookId, cfi).catch(() => {})
+          }
+          const label =
+            (chapter ? `${chapter} · ` : '') + `${Math.round(percentage * 100)}%`
+          if (label !== lastProgRef.current) {
             lastProgRef.current = label
             setProgress(label)
           }
-        } catch {
-          /* ignore */
-        }
-      }
+        },
+        onSelected: ({ cfiRange, text, anchor }) => {
+          if (popupOpenRef.current) return
+          openEditor({ cfi: cfiRange, text, note: '', tag: undefined, anchor })
+        },
+        onHighlightClick: (id, anchor) => openEditorForHighlight(id, anchor),
+        onTap: () => setBarVisible((v) => !v),
+      })
+      engineRef.current = engine
+      ;(window as any).vr = engine // debug
+      await engine.start(bookId, rec.lastLocation, hs)
+
+      // build the locations index for an accurate whole-book % (cached)
       if (rec.locations) {
         try {
           book.locations.load(rec.locations)
-          refreshProgress()
         } catch {
           /* ignore */
         }
@@ -356,19 +161,19 @@ export default function Reader({
           if (cancelled || !book.locations) return
           Promise.resolve(book.locations.generate(1600))
             .then(() => {
-              if (cancelled) return
-              try {
-                saveBookLocations(bookId, book.locations.save())
-              } catch {
-                /* ignore */
+              if (!cancelled) {
+                try {
+                  saveBookLocations(bookId, book.locations.save())
+                } catch {
+                  /* ignore */
+                }
               }
-              refreshProgress()
             })
             .catch(() => {})
         }
         const ric = (window as any).requestIdleCallback
         if (typeof ric === 'function') ric(gen, { timeout: 4000 })
-        else window.setTimeout(gen, 1500)
+        else window.setTimeout(gen, 2000)
       }
     }
     setup().catch((e) => {
@@ -377,9 +182,9 @@ export default function Reader({
     })
     return () => {
       cancelled = true
-      flushLocation() // save exact position before tearing down (avoids drift)
+      flushLocation()
       try {
-        renditionRef.current?.destroy()
+        engineRef.current?.destroy()
       } catch {
         /* ignore */
       }
@@ -388,85 +193,59 @@ export default function Reader({
       } catch {
         /* ignore */
       }
-      renditionRef.current = null
+      engineRef.current = null
       bookRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId])
 
-  // ---- live settings: theme/font update, or remount on flow change ----
+  // ---- live settings ----
   useEffect(() => {
     settingsRef.current = settings
     saveSettings(settings)
     applyTheme(settings.theme)
-    const r = renditionRef.current
-    if (!r) return
-    if (prevFlowRef.current !== settings.flow) {
-      prevFlowRef.current = settings.flow
-      mountRendition(lastCfiRef.current).catch(console.error)
-    } else {
-      try {
-        r.themes.default(themeRules(settings) as any)
-        r.themes.fontSize(`${settings.fontScale}%`)
-      } catch (e) {
-        console.warn(e)
-      }
-    }
-  }, [settings, mountRendition])
+    engineRef.current?.applySettings(settings)
+  }, [settings])
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((s) => ({ ...s, ...patch }))
   }, [])
 
-  // Backgrounding (iOS PWA/Safari) can reflow the content and drift the scroll
-  // position on return. Capture the exact spot when hidden, and RE-APPLY it when
-  // we come back to the foreground so the paragraph stays put.
-  const resumeCfiRef = useRef<string | null>(null)
+  // persist + restore position around backgrounding
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
-        resumeCfiRef.current = getPreciseCfi() ?? lastCfiRef.current ?? null
+        resumeCfiRef.current = engineRef.current?.currentCfi() ?? lastCfiRef.current ?? null
         flushLocation()
       } else {
         const cfi = resumeCfiRef.current
-        if (cfi) {
-          // let layout settle after resume, then snap back exactly
-          window.setTimeout(() => {
-            renditionRef.current?.display(cfi).catch(() => {})
-          }, 250)
-        }
+        if (cfi) window.setTimeout(() => engineRef.current?.goTo(cfi), 250)
       }
     }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('pagehide', flushLocation)
-    window.addEventListener('pageshow', onVis)
     return () => {
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('pagehide', flushLocation)
-      window.removeEventListener('pageshow', onVis)
     }
-  }, [flushLocation, getPreciseCfi])
+  }, [flushLocation])
 
+  // ---- editor actions ----
   async function handleEditorSave(note: string, tag: string | undefined) {
     if (!editor) return
     const list = highlightsRef.current
+    let next: Highlight[]
     if (editor.highlightId) {
-      // update an existing highlight
       const idx = list.findIndex((x) => x.id === editor.highlightId)
       if (idx === -1) {
         setEditor(null)
         return
       }
       const updated: Highlight = { ...list[idx], note, tag, updatedAt: Date.now() }
-      const next = [...list]
+      next = [...list]
       next[idx] = updated
-      highlightsRef.current = next
-      setHighlights(next)
       await saveHighlight(updated)
-      removeHighlightDraw(updated.cfi) // re-draw with the (maybe changed) tag color
-      drawHighlight(updated)
     } else {
-      // create a new highlight from the selection (empty note is allowed)
       const now = Date.now()
       const h: Highlight = {
         id: crypto.randomUUID(),
@@ -478,12 +257,12 @@ export default function Reader({
         createdAt: now,
         updatedAt: now,
       }
-      const next = [...list, h]
-      highlightsRef.current = next
-      setHighlights(next)
+      next = [...list, h]
       await saveHighlight(h)
-      drawHighlight(h)
     }
+    highlightsRef.current = next
+    setHighlights(next)
+    engineRef.current?.setHighlights(next)
     setEditor(null)
   }
 
@@ -492,15 +271,11 @@ export default function Reader({
       setEditor(null)
       return
     }
-    const list = highlightsRef.current
-    const h = list.find((x) => x.id === editor.highlightId)
-    if (h) {
-      removeHighlightDraw(h.cfi)
-      await deleteHighlight(h.id)
-      const next = list.filter((x) => x.id !== h.id)
-      highlightsRef.current = next
-      setHighlights(next)
-    }
+    const next = highlightsRef.current.filter((x) => x.id !== editor.highlightId)
+    await deleteHighlight(editor.highlightId)
+    highlightsRef.current = next
+    setHighlights(next)
+    engineRef.current?.setHighlights(next)
     setEditor(null)
   }
 
@@ -511,65 +286,23 @@ export default function Reader({
     setSortedNotes([...highlights].sort((a, b) => cmp(a.cfi, b.cfi)))
   }, [highlights])
 
-  // Did we actually land on the target section? (continuous display() is flaky)
-  function landedNear(loc: any, target: string): boolean {
-    if (!loc?.start) return false
-    if (target.startsWith('epubcfi(')) {
-      const seg = (s: string) => s?.match(/^epubcfi\((\/\d+\/\d+)/)?.[1] ?? ''
-      const a = seg(loc.start.cfi)
-      return !!a && a === seg(target)
-    }
-    const want = target.split('#')[0].split('/').pop() ?? ''
-    const cur = (loc.start.href ?? '').split('/').pop() ?? ''
-    return !!want && !!cur && (cur === want || cur.endsWith(want) || want.endsWith(cur))
-  }
-
-  // Jump and KEEP RETRYING until we've actually landed on the target — so the
-  // user taps once instead of mashing the entry several times to "refresh".
-  const jumpingRef = useRef(false)
-  async function robustDisplay(target: string) {
-    const r = renditionRef.current
-    if (!r || jumpingRef.current) return
-    jumpingRef.current = true
-    try {
-      for (let i = 0; i < 6; i++) {
-        try {
-          await r.display(target)
-        } catch {
-          /* ignore */
-        }
-        await new Promise((res) => setTimeout(res, 160 + i * 120))
-        try {
-          if (landedNear(r.currentLocation?.(), target)) break
-        } catch {
-          /* ignore */
-        }
-      }
-    } finally {
-      jumpingRef.current = false
-    }
-  }
-
   function jumpToNote(h: Highlight) {
     setPanel(null)
     setEditor(null)
-    robustDisplay(h.cfi)
+    engineRef.current?.goTo(h.cfi)
   }
 
   function navigateToc(href: string) {
     setPanel(null)
-    robustDisplay(href)
+    engineRef.current?.goTo(href)
   }
 
   if (error) {
     return (
       <div className="reader">
-        <div className="reader-bar">
-          <button className="icon-btn" onClick={onClose}>
-            ‹
-          </button>
-          <div className="spacer" />
-        </div>
+        <button className="float-ctrl back" onClick={onClose}>
+          ‹
+        </button>
         <div className="empty">{error}</div>
       </div>
     )
@@ -579,8 +312,6 @@ export default function Reader({
     <div className={'reader' + (barVisible ? '' : ' immersive')}>
       <div className="reader-stage" ref={stageRef} />
 
-      {/* Apple-Books-style floating controls: corners only, so text isn't
-          covered. They fade out in immersive mode (tap content to toggle). */}
       <button className="float-ctrl back" onClick={onClose} aria-label="返回书架">
         ‹
       </button>
@@ -637,7 +368,6 @@ export default function Reader({
           <div
             className="editor-backdrop"
             onClick={() => {
-              // ignore the same tap that opened the editor (iOS ghost click)
               if (Date.now() - editorOpenedRef.current < 400) return
               setEditor(null)
             }}

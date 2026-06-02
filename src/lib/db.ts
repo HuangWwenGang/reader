@@ -12,22 +12,46 @@ interface ReaderDB extends DBSchema {
     value: Highlight
     indexes: { bookId: string }
   }
+  // cached per-section pixel heights for the virtual scroller, keyed by
+  // `${bookId}:${layoutHash}` (heights depend on font/spacing/width)
+  heights: {
+    key: string
+    value: { key: string; heights: number[] }
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDB>('reader-v1', 1, {
-      upgrade(db) {
-        const books = db.createObjectStore('books', { keyPath: 'id' })
-        books.createIndex('createdAt', 'createdAt')
-        const highlights = db.createObjectStore('highlights', { keyPath: 'id' })
-        highlights.createIndex('bookId', 'bookId')
+    dbPromise = openDB<ReaderDB>('reader-v1', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const books = db.createObjectStore('books', { keyPath: 'id' })
+          books.createIndex('createdAt', 'createdAt')
+          const highlights = db.createObjectStore('highlights', { keyPath: 'id' })
+          highlights.createIndex('bookId', 'bookId')
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore('heights', { keyPath: 'key' })
+        }
       },
     })
   }
   return dbPromise
+}
+
+// ---- Section height cache (virtual scroller) ----
+
+export async function getHeights(key: string): Promise<number[] | undefined> {
+  const db = await getDB()
+  const rec = await db.get('heights', key)
+  return rec?.heights
+}
+
+export async function saveHeights(key: string, heights: number[]): Promise<void> {
+  const db = await getDB()
+  await db.put('heights', { key, heights })
 }
 
 // ---- Books ----

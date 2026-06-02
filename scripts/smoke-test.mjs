@@ -73,10 +73,19 @@ try {
   await openBook()
   const t0 = await stageText()
   check(t0.includes('第一章'), 'reader renders chapter 1')
-  check(
-    t0.includes('第一章') && t0.includes('第二章'),
-    'continuous manager stacks chapters (infinite scroll)',
-  )
+  // virtual scroll: chapter 2 isn't mounted until we scroll near it
+  await page.evaluate(() => {
+    const sc = document.querySelector('.reader-stage > div')
+    if (sc) sc.scrollTop = sc.scrollHeight
+  })
+  await page.waitForTimeout(1500)
+  check((await stageText()).includes('第二章'), 'scrolling loads the next chapter (infinite scroll)')
+  // scroll back to top for the selection step
+  await page.evaluate(() => {
+    const sc = document.querySelector('.reader-stage > div')
+    if (sc) sc.scrollTop = 0
+  })
+  await page.waitForTimeout(800)
 
   // selection → editor pops directly (no intermediate button)
   await dragSelectLine()
