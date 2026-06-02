@@ -21,7 +21,7 @@ import { rangeToAnchor, type AnchorRect } from './geometry'
 import { colorForTag } from './tags'
 import type { Highlight } from './types'
 
-const BUFFER = 1.0 // render viewport ± this many screens of chapters
+const BUFFER = 1.3 // render viewport ± this many screens of chapters
 const SAVE_DEBOUNCE = 300
 
 export interface RelocateInfo {
@@ -135,7 +135,7 @@ export class VirtualReader {
       /* ignore */
     }
 
-    this.estH = Math.max(1200, this.scroller.clientHeight * 2)
+    this.estH = Math.max(800, Math.round(this.scroller.clientHeight * 1.4))
     this.bookId = bookId
     const cached = await getHeights(`${bookId}:${this.layoutKey()}`)
     this.heights = this.sections.map((_, i) =>
@@ -216,6 +216,16 @@ export class VirtualReader {
       const top = this.offsets[i]
       const bot = top + this.heights[i]
       if (bot > start && top < end) need.add(i)
+    }
+    // always keep the current chapter and its immediate neighbors mounted, so
+    // moving to the next/previous chapter is seamless (already rendered) and
+    // doesn't reload-flash when you scroll back.
+    for (const k of [
+      this.anchor.index - 1,
+      this.anchor.index,
+      this.anchor.index + 1,
+    ]) {
+      if (k >= 0 && k < this.sections.length) need.add(k)
     }
     // unmount no-longer-needed
     for (const [i, m] of this.mounted) {
@@ -393,9 +403,13 @@ export class VirtualReader {
   private measure(i: number) {
     const m = this.mounted.get(i)
     if (!m || !m.doc) return
+    // IMPORTANT: use body.scrollHeight (real content height). documentElement
+    // .scrollHeight returns the iframe's own (estimated) height on iOS, which
+    // left a huge blank tail after short chapters and inflated total/scrollbar.
+    const body = m.doc.body
     const h = Math.max(
-      m.doc.documentElement.scrollHeight,
-      m.doc.body?.scrollHeight ?? 0,
+      body?.scrollHeight ?? 0,
+      body?.getBoundingClientRect().height ?? 0,
       40,
     )
     if (Math.abs(h - this.heights[i]) < 1) {

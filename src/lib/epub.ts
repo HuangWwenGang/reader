@@ -176,11 +176,11 @@ export function readerCss(settings: Settings): string {
   const weightDecl = settings.bold ? 'font-weight:600 !important;' : ''
   const align = settings.justify ? 'justify' : 'start'
   return `
-    html { background:${c.bg} !important; color-scheme: light; }
+    html { background:${c.bg} !important; color-scheme: light; height:auto !important; }
     body {
       background:${c.bg} !important; color:${ink} !important;
-      margin:0 !important;
-      padding:${settings.margin}% ${settings.margin}% 0 !important;
+      margin:0 !important; height:auto !important;
+      padding:${settings.margin}% ${settings.margin}% 6% !important;
       line-height:${settings.lineHeight} !important;
       letter-spacing:${settings.letterSpacing}em !important;
       font-size:${settings.fontScale}% !important;
