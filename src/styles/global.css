@@ -6,6 +6,7 @@
   --accent: #7c6f64;
   --card: #ffffff;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  --ios-bottom-bleed: calc(env(safe-area-inset-bottom, 0px) + 36px);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
@@ -36,7 +37,8 @@ html {
    no longer shows as a bright strip below the dimmed page. */
 html:has(.sheet-backdrop),
 html:has(.editor-backdrop),
-html:has(.panel-backdrop) {
+html:has(.panel-backdrop),
+html.overlay-open {
   background: var(--scrim-bg, var(--paper));
 }
 
@@ -228,16 +230,16 @@ button {
 
 .reader {
   position: fixed;
-  inset: 0;
-  height: 100vh;
-  height: 100dvh;
-  height: -webkit-fill-available;
-  min-height: 100%;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--ios-bottom-bleed));
+  min-height: calc(100vh + var(--ios-bottom-bleed));
+  min-height: calc(100dvh + var(--ios-bottom-bleed));
   display: flex;
   flex-direction: column;
   background: var(--paper);
   animation: bookOpen 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  overflow: hidden;
 }
 
 .reader-bar {
@@ -305,7 +307,7 @@ button {
   top: 0;
   left: 0;
   right: 0;
-  bottom: calc(env(safe-area-inset-bottom) * -1);
+  bottom: calc(-1 * var(--ios-bottom-bleed));
 }
 
 /* (removed a legacy `.reader-stage > div { height: 100% }` rule — it fought the
@@ -861,7 +863,7 @@ button {
   /* extend the glass past the bottom safe-area band to the physical edge so no
      strip shows below the sheet; the content padding keeps controls above the
      home indicator */
-  bottom: calc(env(safe-area-inset-bottom) * -1);
+  bottom: calc(-1 * var(--ios-bottom-bleed));
   z-index: 71;
   background: var(--glass);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -886,10 +888,10 @@ button {
 .editor-backdrop,
 .panel-backdrop,
 .sheet-backdrop {
-  bottom: calc(env(safe-area-inset-bottom) * -1);
+  bottom: calc(-1 * var(--ios-bottom-bleed));
   /* second mechanism (in case the negative bottom is clamped): force the scrim
      to the full screen height incl. the bottom safe-area band */
-  min-height: 100lvh;
+  min-height: calc(100lvh + var(--ios-bottom-bleed));
 }
 
 .sheet-handle {
