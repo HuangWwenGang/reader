@@ -124,12 +124,14 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      // Full-bleed fullscreen. `.reader` (its ancestor) is extended past the
-      // bottom safe-area band to the physical screen edge, so plain inset:0 here
-      // already reaches the bottom — content runs truly edge to edge and the
-      // home indicator floats over it.
+      // Full-bleed fullscreen. The stage extends through the bottom safe-area
+      // band, so the virtual scroller paints under the home indicator instead
+      // of ending above it as a separate strip.
       position: 'absolute',
-      inset: '0',
+      top: '0',
+      left: '0',
+      right: '0',
+      bottom: '0',
       overflowY: 'auto', overflowX: 'hidden',
       // contain (not none) stops the rubber-band from chaining to the document —
       // the page no longer bounces — WITHOUT disabling the scroller itself.

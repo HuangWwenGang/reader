@@ -9,11 +9,11 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- black-translucent: web content extends under the status bar (edge-to-edge,
-         no top buffer) when added to the Home Screen as a standalone PWA -->
+    <!-- Avoid black-translucent here. On iOS/iPadOS standalone PWAs it can offset
+         the webview and leave an unpaintable-looking gap at the bottom. -->
     <meta
       name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
+      content="default"
     />
     <meta name="apple-mobile-web-app-title" content="阅读器" />
     <meta name="theme-color" content="#faf9f7" />
