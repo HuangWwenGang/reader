@@ -124,12 +124,15 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      // TRUE full-bleed fullscreen: the scroller covers the whole screen edge to
-      // edge (the system status bar + home indicator float translucently over
-      // the content — the native "infinite-scroll" look the user wants, no
-      // app-drawn bars). The reading margins live inside the page CSS, not here.
+      // TRUE full-bleed fullscreen. On iOS standalone PWA the layout viewport's
+      // BOTTOM stops above the home indicator (the top status bar is just an
+      // overlay, so top:0 already reaches the physical top — but bottom:0 leaves
+      // a reserved safe-area band). So we extend the bottom PAST that band, by
+      // -safe-area-inset-bottom, to reach the physical screen edge. Content then
+      // runs truly edge to edge; the home indicator floats over it.
       position: 'absolute',
-      inset: '0',
+      top: '0', left: '0', right: '0',
+      bottom: 'calc(env(safe-area-inset-bottom) * -1)',
       overflowY: 'auto', overflowX: 'hidden',
       // contain (not none) stops the rubber-band from chaining to the document —
       // the page no longer bounces — WITHOUT disabling the scroller itself.
