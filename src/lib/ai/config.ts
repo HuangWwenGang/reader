@@ -6,10 +6,12 @@ import type { AIConfig } from './types'
 const KEY = 'reader-ai-config'
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
-  chatVendor: 'anthropic',
+  chatVendor: 'openai', // OpenAI-compatible covers most third-party relays
   anthropicKey: '',
   openaiKey: '',
-  chatModel: 'claude-sonnet-4-6',
+  openaiBaseUrl: 'https://api.openai.com/v1',
+  anthropicBaseUrl: 'https://api.anthropic.com/v1',
+  chatModel: 'gpt-4o-mini',
   embedModel: 'text-embedding-3-small',
 }
 

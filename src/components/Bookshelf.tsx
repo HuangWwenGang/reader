@@ -7,6 +7,7 @@ import {
 } from '../lib/db'
 import { extractMeta } from '../lib/epub'
 import type { Book } from '../lib/types'
+import AISettings from './AISettings'
 
 function CoverImage({ book }: { book: Book }) {
   const [url, setUrl] = useState<string | null>(null)
@@ -43,6 +44,7 @@ export default function Bookshelf({
   const [books, setBooks] = useState<Book[]>([])
   const [importing, setImporting] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [showAI, setShowAI] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function refresh() {
@@ -116,6 +118,9 @@ export default function Bookshelf({
       <div className="shelf-header">
         <h1>书架</h1>
         <div className="shelf-actions">
+          <button className="btn" onClick={() => setShowAI(true)}>
+            AI 设置
+          </button>
           <button className="btn" onClick={handleExport} disabled={books.length === 0}>
             导出数据
           </button>
@@ -172,6 +177,7 @@ export default function Bookshelf({
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+      {showAI && <AISettings onClose={() => setShowAI(false)} />}
     </div>
   )
 }

@@ -9,12 +9,16 @@ const EMBED_DIMS: Record<string, number> = {
   'text-embedding-ada-002': 1536,
 }
 
+// strip a trailing slash so `${base}/embeddings` is well-formed
+const trimBase = (u: string) => u.replace(/\/+$/, '')
+
 async function openaiEmbed(
+  base: string,
   key: string,
   model: string,
   texts: string[],
 ): Promise<Float32Array[]> {
-  const res = await fetch('https://api.openai.com/v1/embeddings', {
+  const res = await fetch(`${trimBase(base)}/embeddings`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -34,11 +38,12 @@ async function openaiEmbed(
 }
 
 async function anthropicChat(
+  base: string,
   key: string,
   model: string,
   opts: ChatOptions,
 ): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(`${trimBase(base)}/messages`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -74,6 +79,7 @@ async function anthropicChat(
 }
 
 async function openaiChat(
+  base: string,
   key: string,
   model: string,
   opts: ChatOptions,
@@ -82,7 +88,7 @@ async function openaiChat(
     ...(opts.system ? [{ role: 'system', content: opts.system }] : []),
     ...opts.messages,
   ]
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch(`${trimBase(base)}/chat/completions`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -151,16 +157,16 @@ export function makeProvider(config: AIConfig): AIProvider {
     embedModel,
     embedDim: EMBED_DIMS[embedModel] ?? 1536,
     embed: (texts) => {
-      if (!config.openaiKey) throw new Error('缺少 OpenAI API Key（用于向量索引）')
-      return openaiEmbed(config.openaiKey, embedModel, texts)
+      if (!config.openaiKey) throw new Error('缺少向量 API Key（OpenAI 兼容）')
+      return openaiEmbed(config.openaiBaseUrl, config.openaiKey, embedModel, texts)
     },
     chat: (opts) => {
       if (config.chatVendor === 'anthropic') {
-        if (!config.anthropicKey) throw new Error('缺少 Claude API Key')
-        return anthropicChat(config.anthropicKey, config.chatModel, opts)
+        if (!config.anthropicKey) throw new Error('缺少 Anthropic API Key')
+        return anthropicChat(config.anthropicBaseUrl, config.anthropicKey, config.chatModel, opts)
       }
-      if (!config.openaiKey) throw new Error('缺少 OpenAI API Key')
-      return openaiChat(config.openaiKey, config.chatModel, opts)
+      if (!config.openaiKey) throw new Error('缺少 API Key（OpenAI 兼容）')
+      return openaiChat(config.openaiBaseUrl, config.openaiKey, config.chatModel, opts)
     },
   }
 }

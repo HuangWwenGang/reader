@@ -943,6 +943,73 @@ button {
   transform: translateX(20px);
 }
 
+/* ---------- AI settings sheet ---------- */
+
+.ai-sheet {
+  gap: 12px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.ai-title {
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink);
+}
+
+.ai-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ai-field-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ai-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 12px;
+  /* 16px avoids iOS auto-zoom on focus */
+  font-size: 16px;
+  color: var(--ink);
+  background: rgba(127, 127, 127, 0.1);
+  outline: none;
+}
+
+.ai-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-result {
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.ai-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
 .toast {
   position: fixed;
   bottom: calc(24px + env(safe-area-inset-bottom));

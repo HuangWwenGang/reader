@@ -58,12 +58,20 @@ export interface AIProvider {
   readonly embedDim: number
 }
 
+// Which wire protocol the chat endpoint speaks. 'openai' = OpenAI-compatible
+// (/chat/completions) — what most third-party relays expose, often proxying
+// Claude too. 'anthropic' = native Anthropic /messages.
 export type ChatVendor = 'anthropic' | 'openai'
 
 export interface AIConfig {
   chatVendor: ChatVendor
   anthropicKey: string
   openaiKey: string // also used for embeddings
+  // API base URLs — override to point at a third-party relay. Should end in the
+  // version segment (e.g. https://your-relay.com/v1). Embeddings always use the
+  // OpenAI-compatible base.
+  openaiBaseUrl: string
+  anthropicBaseUrl: string
   chatModel: string
   embedModel: string
 }
