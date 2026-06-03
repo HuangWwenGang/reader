@@ -213,7 +213,14 @@ button {
 
 .reader {
   position: fixed;
-  inset: 0;
+  /* iOS standalone PWA: the layout viewport's bottom stops ABOVE the home
+     indicator, so a plain bottom:0 leaves a reserved safe-area band (a stray
+     white/black strip). Extend past it to the physical screen edge so the reader
+     — and everything inset:0 inside it — is truly edge-to-edge. */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) * -1);
   display: flex;
   flex-direction: column;
   background: var(--paper);
@@ -835,7 +842,10 @@ button {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  /* extend the glass past the bottom safe-area band to the physical edge so no
+     strip shows below the sheet; the content padding keeps controls above the
+     home indicator */
+  bottom: calc(env(safe-area-inset-bottom) * -1);
   z-index: 71;
   background: var(--glass);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -843,7 +853,7 @@ button {
   border-top: 0.5px solid rgba(255, 255, 255, 0.14);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding: 6px 18px calc(20px + env(safe-area-inset-bottom));
+  padding: 6px 18px calc(20px + env(safe-area-inset-bottom) * 2);
   box-shadow: 0 -6px 32px rgba(0, 0, 0, 0.22);
   display: flex;
   flex-direction: column;
@@ -851,6 +861,16 @@ button {
   max-width: 560px;
   margin: 0 auto;
   animation: slideUp 0.28s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+/* iOS standalone PWA: extend every full-screen fixed overlay past the bottom
+   safe-area band so the scrim covers the home-indicator strip (no stray band).
+   Placed after their inset:0 defs so this bottom wins. */
+.menu-backdrop,
+.editor-backdrop,
+.panel-backdrop,
+.sheet-backdrop {
+  bottom: calc(env(safe-area-inset-bottom) * -1);
 }
 
 .sheet-handle {
