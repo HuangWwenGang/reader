@@ -227,35 +227,22 @@ button {
 
 .reader {
   position: fixed;
-  /* iOS standalone PWA: the layout viewport's bottom stops ABOVE the home
-     indicator, so a plain bottom:0 leaves a reserved safe-area band (a stray
-     white/black strip). Extend past it to the physical screen edge so the reader
-     — and everything inset:0 inside it — is truly edge-to-edge. */
   top: 0;
   left: 0;
   right: 0;
-  bottom: calc(env(safe-area-inset-bottom) * -1);
-  /* second mechanism: 100lvh = the full screen incl. safe areas, in case the
-     negative bottom is clamped by iOS */
-  min-height: 100lvh;
+  bottom: auto;
+  height: 100vh;
+  height: 100dvh;
+  /* iOS standalone PWA can expose a bottom home-indicator band when fixed
+     elements are sized to the layout viewport. Make the reader canvas taller
+     than that viewport so the virtual scroller paints through to the physical
+     screen edge instead of leaving a safe-area strip. */
+  min-height: calc(100vh + env(safe-area-inset-bottom));
+  min-height: calc(100dvh + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   background: var(--paper);
   animation: bookOpen 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-/* temporary build tag: bottom-left, tiny, so a screenshot shows the version */
-.reader-build-tag {
-  position: fixed;
-  left: 6px;
-  bottom: 2px;
-  z-index: 35;
-  font-size: 9px;
-  line-height: 1;
-  color: var(--muted);
-  opacity: 0.5;
-  pointer-events: none;
-  font-variant-numeric: tabular-nums;
 }
 
 .reader-bar {
