@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import {
   FONT_LABELS,
   THEME_LABELS,
@@ -42,11 +41,6 @@ export default function SettingsSheet({
   onChange: (patch: Partial<Settings>) => void
   onClose: () => void
 }) {
-  useEffect(() => {
-    document.documentElement.classList.add('overlay-open')
-    return () => document.documentElement.classList.remove('overlay-open')
-  }, [])
-
   return (
     <>
       <div className="sheet-backdrop" onClick={onClose} />
