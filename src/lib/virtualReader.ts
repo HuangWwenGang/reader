@@ -124,26 +124,21 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      // Only inset the TOP (so the status bar doesn't cover the chapter title).
-      // Bottom + sides are full-bleed by the user's explicit preference: content
-      // runs to the screen edge and the home indicator floats over it — no
-      // bottom strip. Do NOT re-add a bottom inset.
+      // TRUE full-bleed fullscreen: the scroller covers the whole screen edge to
+      // edge (the system status bar + home indicator float translucently over
+      // the content — the native "infinite-scroll" look the user wants, no
+      // app-drawn bars). The reading margins live inside the page CSS, not here.
       position: 'absolute',
-      top: 'env(safe-area-inset-top)',
-      right: '0',
-      bottom: '0',
-      left: '0',
+      inset: '0',
       overflowY: 'auto', overflowX: 'hidden',
-      // stop the scroller's rubber-band from chaining to the document — that
-      // chaining made the whole page (and the fixed controls) bounce and exposed
-      // a gap at the bottom that looked like a stray "safe-area" strip.
-      overscrollBehavior: 'none',
+      // contain (not none) stops the rubber-band from chaining to the document —
+      // the page no longer bounces — WITHOUT disabling the scroller itself.
+      // Deliberately NOT setting `-webkit-overflow-scrolling: touch`: it's
+      // deprecated and conflicts with overscroll-behavior on iOS (that combo
+      // could freeze scrolling). Modern iOS gives momentum without it.
+      overscrollBehavior: 'contain',
       // themed backdrop so any momentary gap shows the page color, never white
       background: THEMES[this.settings.theme].bg,
-      // hardware-accelerated momentum scrolling. The at-rest crispness comes
-      // from whole-pixel layout (Math.ceil heights), so we keep this for smooth
-      // flings; any softening only happens mid-scroll, which you can't read.
-      WebkitOverflowScrolling: 'touch',
     } as any)
     this.container.appendChild(this.scroller)
 
