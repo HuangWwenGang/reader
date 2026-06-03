@@ -124,16 +124,15 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      // inset by the device safe areas so the status bar (top) and home
-      // indicator (bottom) never overlap text. The strips show the page color
-      // (`.reader` bg == this theme bg) so they blend seamlessly — no band. The
-      // earlier "black block" at the bottom was the un-rendered next-chapter
-      // placeholder (now fixed by measure-before-place), not this strip.
+      // Only inset the TOP (so the status bar doesn't cover the chapter title).
+      // Bottom + sides are full-bleed by the user's explicit preference: content
+      // runs to the screen edge and the home indicator floats over it — no
+      // bottom strip. Do NOT re-add a bottom inset.
       position: 'absolute',
       top: 'env(safe-area-inset-top)',
-      right: 'env(safe-area-inset-right)',
-      bottom: 'env(safe-area-inset-bottom)',
-      left: 'env(safe-area-inset-left)',
+      right: '0',
+      bottom: '0',
+      left: '0',
       overflowY: 'auto', overflowX: 'hidden',
       // themed backdrop so any momentary gap shows the page color, never white
       background: THEMES[this.settings.theme].bg,
