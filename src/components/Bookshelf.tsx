@@ -99,8 +99,11 @@ export default function Bookshelf({
     const pr = progress[book.id]
     if (pr) {
       if (pr.phase === 'render')
-        return `索引中 ${pr.sectionsTotal ? Math.round((pr.sectionsDone / pr.sectionsTotal) * 90) : 0}%`
-      if (pr.phase === 'embed') return '索引中 90%+'
+        return `渲染中 ${pr.sectionsTotal ? Math.round((pr.sectionsDone / pr.sectionsTotal) * 90) : 0}%`
+      if (pr.phase === 'embed') {
+        const pct = pr.chunksTotal ? 90 + Math.round((pr.chunks / pr.chunksTotal) * 10) : 90
+        return `向量化 ${Math.min(99, pct)}%`
+      }
       return '索引中…'
     }
     const meta = metas[book.id]

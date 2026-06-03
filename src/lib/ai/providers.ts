@@ -18,14 +18,30 @@ async function openaiEmbed(
   model: string,
   texts: string[],
 ): Promise<Float32Array[]> {
-  const res = await fetch(`${trimBase(base)}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({ model, input: texts }),
-  })
+  // hard timeout so a hung relay surfaces as an error instead of stalling the
+  // whole index build forever
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), 90_000)
+  let res: Response
+  try {
+    res = await fetch(`${trimBase(base)}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({ model, input: texts }),
+      signal: ac.signal,
+    })
+  } catch (e) {
+    throw new Error(
+      (e as Error)?.name === 'AbortError'
+        ? '向量接口超时（90s 无响应）'
+        : `向量接口请求失败：${(e as Error).message}`,
+    )
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) {
     throw new Error(`OpenAI embeddings ${res.status}: ${await res.text()}`)
   }

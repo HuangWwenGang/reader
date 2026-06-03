@@ -16,13 +16,14 @@ import type { Chunk } from './types'
 
 const TARGET_CHARS = 320
 const BLOCK_SEL = 'p, li, blockquote, dd, h1, h2, h3, h4, h5, h6'
-const EMBED_BATCH = 64
+const EMBED_BATCH = 32 // smaller batches: friendlier to third-party relays
 
 export interface IndexProgress {
   phase: 'render' | 'embed' | 'done' | 'error'
   sectionsDone: number
   sectionsTotal: number
   chunks: number
+  chunksTotal?: number // total chunks to embed (for embed-phase progress)
   error?: string
 }
 
@@ -81,15 +82,24 @@ export async function indexBook(
       })
     }
 
-    // 3. embed in batches and collect vectors
+    // 3. embed in batches and collect vectors (retry each batch once on failure)
     const items: { chunk: Chunk; vec: Float32Array }[] = []
+    let embedded = 0
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH)
-      const vecs = await provider.embed(batch.map((c) => c.text))
+      const texts = batch.map((c) => c.text)
+      let vecs: Float32Array[]
+      try {
+        vecs = await provider.embed(texts)
+      } catch {
+        await new Promise((r) => setTimeout(r, 800))
+        vecs = await provider.embed(texts) // one retry; throws if it fails again
+      }
       batch.forEach((c, j) => items.push({ chunk: c, vec: vecs[j] }))
+      embedded += batch.length
       onProgress?.({
         phase: 'embed', sectionsDone: total, sectionsTotal: total,
-        chunks: Math.min(i + batch.length, chunks.length),
+        chunks: embedded, chunksTotal: chunks.length,
       })
     }
 
