@@ -21,6 +21,7 @@ import HighlightEditor, { type EditorTarget } from './HighlightEditor'
 import TocPanel, { type TocItem } from './TocPanel'
 import NotesPanel from './NotesPanel'
 import SettingsSheet from './SettingsSheet'
+import AskPanel from './AskPanel'
 
 export default function Reader({
   bookId,
@@ -44,6 +45,7 @@ export default function Reader({
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [panel, setPanel] = useState<'toc' | 'notes' | null>(null)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
+  const [ask, setAsk] = useState<string | null>(null) // selected text being asked about
   const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
@@ -376,8 +378,22 @@ export default function Reader({
             onSave={handleEditorSave}
             onCancel={() => setEditor(null)}
             onDelete={handleEditorDelete}
+            onAsk={() => {
+              const q = editor.text
+              setEditor(null)
+              setAsk(q)
+            }}
           />
         </>
+      )}
+
+      {ask && (
+        <AskPanel
+          bookId={bookId}
+          quote={ask}
+          onJump={(cfi) => engineRef.current?.goTo(cfi)}
+          onClose={() => setAsk(null)}
+        />
       )}
 
       {panel === 'toc' && (

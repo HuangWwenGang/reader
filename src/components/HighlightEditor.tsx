@@ -17,11 +17,13 @@ export default function HighlightEditor({
   onSave,
   onCancel,
   onDelete,
+  onAsk,
 }: {
   target: EditorTarget
   onSave: (note: string, tag: string | undefined) => void
   onCancel: () => void
   onDelete: () => void
+  onAsk: () => void
 }) {
   const [note, setNote] = useState(target.note)
   const [tag, setTag] = useState<string | undefined>(target.tag)
@@ -87,6 +89,9 @@ export default function HighlightEditor({
           <span />
         )}
         <div className="right">
+          <button className="ios-btn" onClick={onAsk} type="button">
+            问 AI
+          </button>
           <button className="ios-btn" onClick={onCancel} type="button">
             取消
           </button>
