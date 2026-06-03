@@ -283,10 +283,9 @@ button {
   inset: 0;
 }
 
-/* epub.js renders its scroller/iframes into the stage */
-.reader-stage > div {
-  height: 100%;
-}
+/* (removed a legacy `.reader-stage > div { height: 100% }` rule — it fought the
+   virtual scroller's absolute top/bottom insets, which could leave the bottom
+   inset ambiguous on iOS. The scroller sizes itself from top/bottom now.) */
 
 /* ---------- Apple-Books-style floating controls ---------- */
 
