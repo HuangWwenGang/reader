@@ -6,6 +6,7 @@
   --accent: #7c6f64;
   --card: #ffffff;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+  --ios-bottom-cover: calc(env(safe-area-inset-bottom, 0px) + 12px);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
@@ -36,7 +37,8 @@ html {
    no longer shows as a bright strip below the dimmed page. */
 html:has(.sheet-backdrop),
 html:has(.editor-backdrop),
-html:has(.panel-backdrop) {
+html:has(.panel-backdrop),
+html.overlay-open {
   background: var(--scrim-bg, var(--paper));
 }
 
@@ -305,7 +307,7 @@ button {
   top: 0;
   left: 0;
   right: 0;
-  bottom: calc(env(safe-area-inset-bottom) * -1);
+  bottom: calc(-1 * var(--ios-bottom-cover));
 }
 
 /* (removed a legacy `.reader-stage > div { height: 100% }` rule — it fought the
@@ -886,10 +888,10 @@ button {
 .editor-backdrop,
 .panel-backdrop,
 .sheet-backdrop {
-  bottom: calc(env(safe-area-inset-bottom) * -1);
+  bottom: calc(-1 * var(--ios-bottom-cover));
   /* second mechanism (in case the negative bottom is clamped): force the scrim
      to the full screen height incl. the bottom safe-area band */
-  min-height: 100lvh;
+  min-height: calc(100lvh + var(--ios-bottom-cover));
 }
 
 .sheet-handle {
