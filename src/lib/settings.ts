@@ -126,6 +126,19 @@ export function saveSettings(s: Settings): void {
   }
 }
 
+// theme bg darkened toward black by `amt` (0..1) — used for the iOS home-indicator
+// band while an overlay is open, so it matches the dimmed page behind it.
+function darken(hex: string, amt: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  const f = 1 - amt
+  const r = Math.round(((n >> 16) & 255) * f)
+  const g = Math.round(((n >> 8) & 255) * f)
+  const b = Math.round((n & 255) * f)
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`
+}
+
 // Apply theme colors to the app chrome by setting CSS variables on :root.
 export function applyTheme(theme: ThemeName): void {
   const c = THEMES[theme]
@@ -137,6 +150,8 @@ export function applyTheme(theme: ThemeName): void {
   root.setProperty('--card', c.card)
   root.setProperty('--accent', c.accent)
   root.setProperty('--glass', c.glass)
+  // matches the ~35% black scrim of the overlay backdrops
+  root.setProperty('--scrim-bg', darken(c.bg, 0.35))
   // also drive the browser/PWA chrome
   document
     .querySelector('meta[name="theme-color"]')

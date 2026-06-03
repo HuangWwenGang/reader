@@ -25,10 +25,18 @@ body,
   overscroll-behavior: none;
 }
 
-/* the home-indicator band shows the html background when nothing covers it; keep
-   it the theme color so it blends with the page (no stray white/black strip) */
+/* the home-indicator band (which iOS won't let a fixed element cover) shows the
+   html background. Keep it the page color so it blends while reading… */
 html {
   background: var(--paper);
+}
+
+/* …and dim it to match the scrim while a darkening overlay is open, so the band
+   no longer shows as a bright strip below the dimmed page. */
+html:has(.sheet-backdrop),
+html:has(.editor-backdrop),
+html:has(.panel-backdrop) {
+  background: var(--scrim-bg, var(--paper));
 }
 
 
