@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { loadAIConfig, saveAIConfig } from '../lib/ai/config'
 import { makeProvider } from '../lib/ai/providers'
 import type { AIConfig } from '../lib/ai/types'
@@ -44,11 +45,13 @@ export default function AISettings({ onClose }: { onClose: () => void }) {
 
   const isOpenAI = cfg.chatVendor === 'openai'
 
-  return (
+  // Portal to <body> so the fixed overlay is viewport-relative — the bookshelf
+  // has an entrance animation that otherwise becomes the positioning context on
+  // iOS and throws the panel into the middle of the page.
+  return createPortal(
     <>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet ai-sheet">
-        <div className="sheet-handle" />
+      <div className="ai-modal">
         <div className="ai-title">AI 设置</div>
 
         <div className="sheet-row">
@@ -119,7 +122,8 @@ export default function AISettings({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
 

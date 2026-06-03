@@ -124,12 +124,13 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      // inset by the device safe areas so text never slides under the status bar
-      // (top) or home indicator (bottom); the themed page color fills the strips
+      // inset the TOP by the status-bar safe area so text doesn't slide under
+      // the clock/battery. Bottom stays full-bleed (no black strip — the home
+      // indicator just floats over the last line, which the user prefers).
       position: 'absolute',
       top: 'env(safe-area-inset-top)',
       right: 'env(safe-area-inset-right)',
-      bottom: 'env(safe-area-inset-bottom)',
+      bottom: '0',
       left: 'env(safe-area-inset-left)',
       overflowY: 'auto', overflowX: 'hidden',
       // themed backdrop so any momentary gap shows the page color, never white
