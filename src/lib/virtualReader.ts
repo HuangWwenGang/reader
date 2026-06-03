@@ -66,6 +66,12 @@ export class VirtualReader {
   private sections: any[] = []
   private heights: number[] = []
   private estH = 1600
+  // running average of REAL (measured) chapter heights — a much better estimate
+  // for not-yet-measured chapters than a flat guess, so new imports (no cache)
+  // don't over-estimate short chapters and strand you in a blank tail.
+  private realHeight: boolean[] = []
+  private hSum = 0
+  private hCount = 0
   private mounted = new Map<number, Mounted>()
   private firstLoaded = 0
   private lastLoaded = -1
@@ -147,6 +153,11 @@ export class VirtualReader {
     this.fromCache = !!(cached && cached.length === this.sections.length)
     this.cacheComplete = this.fromCache && (await getHeightsComplete(`${bookId}:${this.layoutKey()}`))
     this.heights = this.sections.map((_, i) => (this.fromCache ? cached![i] : this.estH))
+    // seed the running average from the cache; a fresh import starts empty and
+    // builds it as chapters are measured
+    this.realHeight = this.sections.map(() => this.fromCache)
+    this.hCount = this.fromCache ? this.sections.length : 0
+    this.hSum = this.fromCache ? this.heights.reduce((a, b) => a + b, 0) : 0
 
     // initial chapter
     let i0 = 0
@@ -192,8 +203,10 @@ export class VirtualReader {
     if (!this.cacheComplete) {
       const kick = () => this.premeasureAll()
       const ric = (window as any).requestIdleCallback
-      if (typeof ric === 'function') ric(kick, { timeout: 2500 })
-      else window.setTimeout(kick, 1000)
+      // start sooner on a fresh import (no cache) so accurate heights are ready
+      // before fast readers reach them; idle-defer when we already have a cache
+      if (this.fromCache && typeof ric === 'function') ric(kick, { timeout: 2500 })
+      else window.setTimeout(kick, this.fromCache ? 1000 : 500)
     }
   }
 
@@ -215,6 +228,10 @@ export class VirtualReader {
 
   // ---- mounting (flow layout) ----
   private makeSection(i: number): Mounted {
+    // mount at the best height we have: a real/cached measure, else the running
+    // average — so the box starts close to its true size and the first measure
+    // barely corrects (no over-estimated blank tail to jump out of).
+    this.heights[i] = this.estimateFor(i)
     const el = document.createElement('div')
     Object.assign(el.style, {
       position: 'relative',
@@ -386,6 +403,25 @@ export class VirtualReader {
     }
   }
 
+  // best initial height for an un-measured chapter: the running average of real
+  // heights once we have any, else the flat estimate.
+  private estimateFor(i: number): number {
+    if (this.realHeight[i]) return this.heights[i]
+    return this.hCount > 0 ? Math.round(this.hSum / this.hCount) : this.estH
+  }
+
+  // record a REAL measured height for chapter i and keep the running average.
+  private setReal(i: number, h: number) {
+    if (this.realHeight[i]) {
+      this.hSum += h - this.heights[i]
+    } else {
+      this.hSum += h
+      this.hCount++
+      this.realHeight[i] = true
+    }
+    this.heights[i] = h
+  }
+
   private measure(i: number) {
     const m = this.mounted.get(i)
     if (!m || !m.doc) return
@@ -400,6 +436,7 @@ export class VirtualReader {
       ),
     )
     if (Math.abs(h - this.heights[i]) < 1) {
+      if (!this.realHeight[i]) this.setReal(i, h) // confirm as real for the average
       m.measured = true
       return
     }
@@ -415,7 +452,7 @@ export class VirtualReader {
       return
     }
     const delta = h - this.heights[i]
-    this.heights[i] = h
+    this.setReal(i, h)
     m.el.style.height = `${h}px`
     if (r.bottom <= scTop + 1) {
       // chapter is entirely ABOVE the viewport: the reflow pushed everything
@@ -659,9 +696,8 @@ export class VirtualReader {
       old.margin !== settings.margin ||
       old.fontFamily !== settings.fontFamily ||
       old.bold !== settings.bold
-    for (const [i, m] of this.mounted) {
+    for (const [, m] of this.mounted) {
       if (m.doc) this.injectCss(m.doc)
-      if (layoutChanged) this.measure(i)
     }
     if (layoutChanged) {
       const key = `${this.bookId}:${this.layoutKey()}`
@@ -669,12 +705,16 @@ export class VirtualReader {
       const N = this.sections.length
       this.fromCache = !!(cached && cached.length === N)
       this.cacheComplete = this.fromCache && (await getHeightsComplete(key))
-      // re-seed unmounted chapters for the NEW layout so they don't mount at a
-      // stale height from the old font/size (which would drift on arrival)
+      // reset heights + running average for the NEW layout (old metrics are stale)
       for (let i = 0; i < N; i++) {
         if (this.mounted.has(i)) continue
         this.heights[i] = this.fromCache ? cached![i] : this.estH
       }
+      this.realHeight = this.sections.map(() => this.fromCache)
+      this.hCount = this.fromCache ? N : 0
+      this.hSum = this.fromCache ? this.heights.reduce((a, b) => a + b, 0) : 0
+      // re-measure the mounted chapters against the new layout (records reals)
+      for (const [i] of this.mounted) this.measure(i)
       if (!this.cacheComplete && !this.premeasuring) {
         const ric = (window as any).requestIdleCallback
         if (typeof ric === 'function') ric(() => this.premeasureAll(), { timeout: 2500 })
@@ -873,7 +913,8 @@ export class VirtualReader {
       } catch {
         h = 0
       }
-      if (h > 40) this.heights[i] = h
+      // don't clobber a chapter that's currently mounted (its live measure wins)
+      if (h > 40 && !this.mounted.has(i)) this.setReal(i, h)
       await new Promise((r) => setTimeout(r, 0))
     }
     hidden.remove()

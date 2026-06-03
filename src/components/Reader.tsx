@@ -315,7 +315,6 @@ export default function Reader({
       <button className="float-ctrl back" onClick={onClose} aria-label="返回书架">
         ‹
       </button>
-      {progress && <div className="float-progress">{progress}</div>}
       <button
         className="float-ctrl menu"
         onClick={() => setMenuOpen(true)}
