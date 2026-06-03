@@ -85,6 +85,12 @@ export class VirtualReader {
   private isScrolling = false
   private scrollIdle: number | null = null
   private pendingMeasure = new Set<number>()
+  // measure-before-place: an off-screen iframe + queue used to learn a chapter's
+  // exact height BEFORE it's put in the flow, so it never resizes after placement
+  // (the "变大变小" flicker). mInflight de-dupes in-progress measures.
+  private mIframe: HTMLIFrameElement | null = null
+  private mQueue: Promise<void> = Promise.resolve()
+  private mInflight = new Set<number>()
   private saveTimer: number | null = null
   private highlights: Highlight[] = []
   private toc: { href: string; label: string }[] = []
@@ -118,7 +124,14 @@ export class VirtualReader {
     this.bookId = bookId
     this.scroller = document.createElement('div')
     Object.assign(this.scroller.style, {
-      position: 'absolute', inset: '0', overflowY: 'auto', overflowX: 'hidden',
+      // inset by the device safe areas so text never slides under the status bar
+      // (top) or home indicator (bottom); the themed page color fills the strips
+      position: 'absolute',
+      top: 'env(safe-area-inset-top)',
+      right: 'env(safe-area-inset-right)',
+      bottom: 'env(safe-area-inset-bottom)',
+      left: 'env(safe-area-inset-left)',
+      overflowY: 'auto', overflowX: 'hidden',
       // themed backdrop so any momentary gap shows the page color, never white
       background: THEMES[this.settings.theme].bg,
       // hardware-accelerated momentum scrolling. The at-rest crispness comes
@@ -214,6 +227,12 @@ export class VirtualReader {
     this.destroyed = true
     if (this.saveTimer) clearTimeout(this.saveTimer)
     if (this.scrollIdle) clearTimeout(this.scrollIdle)
+    try {
+      this.mIframe?.remove()
+    } catch {
+      /* ignore */
+    }
+    this.mIframe = null
     this.scroller?.removeEventListener('scroll', this.onScroll)
     for (const [, m] of this.mounted) {
       try {
@@ -374,13 +393,26 @@ export class VirtualReader {
 
     // 1. append below — no scrollTop change, safe anytime
     if (this.lastLoaded < N - 1 && sc.scrollHeight - (sc.scrollTop + vh) < BUFFER * vh) {
-      this.appendBottom(this.lastLoaded + 1)
+      const i = this.lastLoaded + 1
+      // measure-before-place: only mount once the exact height is known, so the
+      // box never resizes after it's in the flow (no flicker). If not known yet,
+      // measure it off-screen and resume this fill when ready.
+      if (!this.realHeight[i]) {
+        if (!this.mInflight.has(i)) this.ensureMeasured(i).then(() => this.scheduleFill())
+        return
+      }
+      this.appendBottom(i)
       return this.scheduleFill()
     }
     // 2. prepend above — writes scrollTop, but needed so back-reading loads; at
     //    most one per frame keeps it cheap (no freeze)
     if (this.firstLoaded > 0 && sc.scrollTop < BUFFER * vh) {
-      this.prependTop(this.firstLoaded - 1)
+      const i = this.firstLoaded - 1
+      if (!this.realHeight[i]) {
+        if (!this.mInflight.has(i)) this.ensureMeasured(i).then(() => this.scheduleFill())
+        return
+      }
+      this.prependTop(i)
       return this.scheduleFill()
     }
     // 3. recycle far below — fromTop=false, no scrollTop change → safe anytime
@@ -882,6 +914,37 @@ export class VirtualReader {
     this.cacheTimer = window.setTimeout(() => {
       saveHeights(`${this.bookId}:${this.layoutKey()}`, this.heights.slice()).catch(() => {})
     }, 1500)
+  }
+
+  // Learn chapter i's exact height off-screen (if not already known). Serialized
+  // so we never spawn a pile of hidden iframes; de-duped via mInflight.
+  private ensureMeasured(i: number): Promise<void> {
+    if (this.realHeight[i] || this.destroyed || this.mInflight.has(i)) {
+      return Promise.resolve()
+    }
+    this.mInflight.add(i)
+    const run = this.mQueue.then(async () => {
+      if (this.realHeight[i] || this.destroyed || this.mounted.has(i)) return
+      if (!this.mIframe) {
+        this.mIframe = document.createElement('iframe')
+        Object.assign(this.mIframe.style, {
+          position: 'absolute', left: '-99999px', top: '0',
+          width: `${this.scroller.clientWidth}px`, height: '10px', border: '0',
+          visibility: 'hidden',
+        } as any)
+        this.container.appendChild(this.mIframe)
+      }
+      try {
+        const html = await this.sections[i].render(this.book.load.bind(this.book))
+        const h = await this.measureHidden(this.mIframe, html)
+        if (h > 40 && !this.mounted.has(i)) this.setReal(i, h)
+      } catch {
+        /* ignore */
+      }
+    })
+    this.mQueue = run.catch(() => {})
+    run.finally(() => this.mInflight.delete(i))
+    return run
   }
 
   private async premeasureAll() {
