@@ -312,6 +312,9 @@ export default function Reader({
     <div className={'reader' + (barVisible ? '' : ' immersive')}>
       <div className="reader-stage" ref={stageRef} />
 
+      {/* tiny build tag (temporary) so a screenshot reveals which version is loaded */}
+      <div className="reader-build-tag">{String(__APP_VERSION__).slice(0, 7)}</div>
+
       <button className="float-ctrl back" onClick={onClose} aria-label="返回书架">
         ‹
       </button>

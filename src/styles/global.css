@@ -25,6 +25,12 @@ body,
   overscroll-behavior: none;
 }
 
+/* the home-indicator band shows the html background when nothing covers it; keep
+   it the theme color so it blends with the page (no stray white/black strip) */
+html {
+  background: var(--paper);
+}
+
 
 body {
   background: var(--paper);
@@ -221,10 +227,27 @@ button {
   left: 0;
   right: 0;
   bottom: calc(env(safe-area-inset-bottom) * -1);
+  /* second mechanism: 100lvh = the full screen incl. safe areas, in case the
+     negative bottom is clamped by iOS */
+  min-height: 100lvh;
   display: flex;
   flex-direction: column;
   background: var(--paper);
   animation: bookOpen 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* temporary build tag: bottom-left, tiny, so a screenshot shows the version */
+.reader-build-tag {
+  position: fixed;
+  left: 6px;
+  bottom: 2px;
+  z-index: 35;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.5;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .reader-bar {
@@ -871,6 +894,9 @@ button {
 .panel-backdrop,
 .sheet-backdrop {
   bottom: calc(env(safe-area-inset-bottom) * -1);
+  /* second mechanism (in case the negative bottom is clamped): force the scrim
+     to the full screen height incl. the bottom safe-area band */
+  min-height: 100lvh;
 }
 
 .sheet-handle {
