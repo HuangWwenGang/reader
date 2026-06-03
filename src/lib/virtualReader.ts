@@ -134,6 +134,10 @@ export class VirtualReader {
       bottom: '0',
       left: '0',
       overflowY: 'auto', overflowX: 'hidden',
+      // stop the scroller's rubber-band from chaining to the document — that
+      // chaining made the whole page (and the fixed controls) bounce and exposed
+      // a gap at the bottom that looked like a stray "safe-area" strip.
+      overscrollBehavior: 'none',
       // themed backdrop so any momentary gap shows the page color, never white
       background: THEMES[this.settings.theme].bg,
       // hardware-accelerated momentum scrolling. The at-rest crispness comes

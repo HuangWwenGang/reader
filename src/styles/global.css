@@ -20,13 +20,22 @@ body,
   margin: 0;
   height: 100%;
   width: 100%;
+  /* never let the document itself rubber-band — that bounce moved the fixed
+     controls and exposed a gap at the bottom that looked like a safe-area strip */
+  overscroll-behavior: none;
+}
+
+/* lock the document while reading so ONLY the inner scroller scrolls (no page
+   bounce). The reader is a fixed full-screen overlay, so nothing else needs to
+   scroll here. (overscroll-behavior is the real fix; this is belt-and-suspenders
+   where :has() is supported.) */
+body:has(.reader) {
+  overflow: hidden;
 }
 
 body {
   background: var(--paper);
   color: var(--ink);
-  /* fill notch areas when installed as PWA */
-  overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
 }
 
