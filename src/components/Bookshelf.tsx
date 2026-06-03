@@ -4,9 +4,13 @@ import {
   deleteBook,
   exportAllData,
   getBooks,
+  getBookIndexMeta,
 } from '../lib/db'
 import { extractMeta } from '../lib/epub'
 import type { Book } from '../lib/types'
+import { indexBook, type IndexProgress } from '../lib/ai/indexer'
+import { aiReady, loadAIConfig } from '../lib/ai/config'
+import type { BookIndexMeta } from '../lib/ai/types'
 import AISettings from './AISettings'
 
 function CoverImage({ book }: { book: Book }) {
@@ -45,10 +49,64 @@ export default function Bookshelf({
   const [importing, setImporting] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [showAI, setShowAI] = useState(false)
+  const [metas, setMetas] = useState<Record<string, BookIndexMeta>>({})
+  const [progress, setProgress] = useState<Record<string, IndexProgress>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function refresh() {
-    setBooks(await getBooks())
+    const list = await getBooks()
+    setBooks(list)
+    const m: Record<string, BookIndexMeta> = {}
+    await Promise.all(
+      list.map(async (b) => {
+        const meta = await getBookIndexMeta(b.id)
+        if (meta) m[b.id] = meta
+      }),
+    )
+    setMetas(m)
+  }
+
+  async function handleIndex(book: Book, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (progress[book.id]) return // already running
+    if (!aiReady(loadAIConfig()).embed) {
+      showToast('请先在「AI 设置」填好向量接口 Key')
+      setShowAI(true)
+      return
+    }
+    setProgress((p) => ({
+      ...p,
+      [book.id]: { phase: 'render', sectionsDone: 0, sectionsTotal: 0, chunks: 0 },
+    }))
+    try {
+      await indexBook(book.id, (pr) =>
+        setProgress((p) => ({ ...p, [book.id]: pr })),
+      )
+      showToast(`《${book.title}》索引完成`)
+    } catch (err) {
+      showToast('索引失败：' + (err as Error).message.slice(0, 80))
+    } finally {
+      setProgress((p) => {
+        const n = { ...p }
+        delete n[book.id]
+        return n
+      })
+      await refresh()
+    }
+  }
+
+  function indexLabel(book: Book): string {
+    const pr = progress[book.id]
+    if (pr) {
+      if (pr.phase === 'render')
+        return `索引中 ${pr.sectionsTotal ? Math.round((pr.sectionsDone / pr.sectionsTotal) * 90) : 0}%`
+      if (pr.phase === 'embed') return '索引中 90%+'
+      return '索引中…'
+    }
+    const meta = metas[book.id]
+    if (meta?.state === 'ready') return `已索引 · ${meta.chunkCount} 块`
+    if (meta?.state === 'error') return '索引失败 · 重试'
+    return '建立索引'
   }
 
   useEffect(() => {
@@ -167,6 +225,16 @@ export default function Bookshelf({
               <CoverImage book={book} />
               <div className="book-title">{book.title}</div>
               {book.author && <div className="book-author">{book.author}</div>}
+              <button
+                className={
+                  'index-chip' +
+                  (metas[book.id]?.state === 'ready' ? ' ready' : '') +
+                  (progress[book.id] ? ' busy' : '')
+                }
+                onClick={(e) => handleIndex(book, e)}
+              >
+                {indexLabel(book)}
+              </button>
             </div>
           ))}
         </div>

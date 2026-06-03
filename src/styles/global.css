@@ -148,6 +148,30 @@ button {
   color: var(--muted);
 }
 
+.index-chip {
+  margin-top: 4px;
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.index-chip.ready {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.index-chip.busy {
+  color: var(--accent);
+  border-color: var(--accent);
+  opacity: 0.85;
+}
+
 .book-delete {
   position: absolute;
   top: 6px;
