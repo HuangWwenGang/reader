@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { Book, Highlight } from './types'
+import type { Chunk, ChunkVector, BookIndexMeta } from './ai/types'
 
 interface ReaderDB extends DBSchema {
   books: {
@@ -18,13 +19,32 @@ interface ReaderDB extends DBSchema {
     key: string
     value: { key: string; heights: number[]; complete?: boolean }
   }
+  // ---- V2 RAG layer ----
+  // retrievable text chunks (book paragraphs + the user's highlights/notes)
+  chunks: {
+    key: string
+    value: Chunk
+    indexes: { bookId: string }
+  }
+  // embedding vector per chunk (kept separate so similarity search can stream
+  // just the floats without the text payload)
+  vectors: {
+    key: string
+    value: ChunkVector
+    indexes: { bookId: string }
+  }
+  // per-book index status (model, dims, progress, done)
+  aimeta: {
+    key: string
+    value: BookIndexMeta
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDB>('reader-v1', 2, {
+    dbPromise = openDB<ReaderDB>('reader-v1', 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const books = db.createObjectStore('books', { keyPath: 'id' })
@@ -34,6 +54,13 @@ function getDB() {
         }
         if (oldVersion < 2) {
           db.createObjectStore('heights', { keyPath: 'key' })
+        }
+        if (oldVersion < 3) {
+          const chunks = db.createObjectStore('chunks', { keyPath: 'id' })
+          chunks.createIndex('bookId', 'bookId')
+          const vectors = db.createObjectStore('vectors', { keyPath: 'id' })
+          vectors.createIndex('bookId', 'bookId')
+          db.createObjectStore('aimeta', { keyPath: 'bookId' })
         }
       },
     })
@@ -102,15 +129,79 @@ export async function saveBookLocations(id: string, json: string): Promise<void>
   await db.put('books', book)
 }
 
-// Delete a book and all of its highlights (PRD §3.2).
+// Delete a book and all of its highlights + RAG index (PRD §3.2).
 export async function deleteBook(id: string): Promise<void> {
   const db = await getDB()
-  const tx = db.transaction(['books', 'highlights'], 'readwrite')
+  const tx = db.transaction(
+    ['books', 'highlights', 'chunks', 'vectors', 'aimeta'],
+    'readwrite',
+  )
   await tx.objectStore('books').delete(id)
-  const hStore = tx.objectStore('highlights')
-  const keys = await hStore.index('bookId').getAllKeys(id)
-  await Promise.all(keys.map((k) => hStore.delete(k)))
+  for (const store of ['highlights', 'chunks', 'vectors'] as const) {
+    const s = tx.objectStore(store)
+    const keys = await s.index('bookId').getAllKeys(id)
+    await Promise.all(keys.map((k) => s.delete(k)))
+  }
+  await tx.objectStore('aimeta').delete(id)
   await tx.done
+}
+
+// ---- RAG: chunks + vectors + index meta ----
+
+export async function getBookIndexMeta(
+  bookId: string,
+): Promise<BookIndexMeta | undefined> {
+  const db = await getDB()
+  return db.get('aimeta', bookId)
+}
+
+export async function saveBookIndexMeta(meta: BookIndexMeta): Promise<void> {
+  const db = await getDB()
+  await db.put('aimeta', meta)
+}
+
+// Replace a book's entire index (chunks + vectors) in one transaction.
+export async function saveChunksWithVectors(
+  bookId: string,
+  items: { chunk: Chunk; vec: Float32Array }[],
+): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction(['chunks', 'vectors'], 'readwrite')
+  const cStore = tx.objectStore('chunks')
+  const vStore = tx.objectStore('vectors')
+  for (const { chunk, vec } of items) {
+    cStore.put(chunk)
+    vStore.put({ id: chunk.id, bookId, vec })
+  }
+  await tx.done
+}
+
+export async function clearBookIndex(bookId: string): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction(['chunks', 'vectors'], 'readwrite')
+  for (const store of ['chunks', 'vectors'] as const) {
+    const s = tx.objectStore(store)
+    const keys = await s.index('bookId').getAllKeys(bookId)
+    await Promise.all(keys.map((k) => s.delete(k)))
+  }
+  await tx.done
+}
+
+// All vectors for a book — small enough (a few MB) to brute-force cosine search.
+export async function getBookVectors(bookId: string): Promise<ChunkVector[]> {
+  const db = await getDB()
+  return db.getAllFromIndex('vectors', 'bookId', bookId)
+}
+
+export async function getChunksByIds(ids: string[]): Promise<Chunk[]> {
+  const db = await getDB()
+  const out = await Promise.all(ids.map((id) => db.get('chunks', id)))
+  return out.filter((c): c is Chunk => !!c)
+}
+
+export async function getBookChunkCount(bookId: string): Promise<number> {
+  const db = await getDB()
+  return db.countFromIndex('chunks', 'bookId', bookId)
 }
 
 // ---- Highlights ----
