@@ -801,7 +801,7 @@ export class VirtualReader {
   }
 
   // ---- navigation ----
-  async goTo(target: string): Promise<void> {
+  async goTo(target: string, opts?: { flash?: boolean }): Promise<void> {
     let sec: any
     try {
       sec = this.book.spine.get(target)
@@ -861,6 +861,68 @@ export class VirtualReader {
       sc.style.opacity = '1'
     })
     this.emitRelocate()
+    // After layout settles, re-pin precisely to the CFI (the first pass can be
+    // off while the iframe is still laying out) and briefly flash the target so
+    // you can see exactly where the jump landed.
+    if (target.startsWith('epubcfi(')) {
+      window.setTimeout(() => this.repositionAndFlash(target, !!opts?.flash), 170)
+    }
+  }
+
+  // re-resolve the CFI after the page has settled, nudge it just below the top,
+  // and (optionally) flash a highlight over it for ~1.8s.
+  private repositionAndFlash(cfi: string, flash: boolean) {
+    if (this.destroyed || !this.scroller) return
+    for (const [i, m] of this.mounted) {
+      if (!m.doc || !this.cfiInSection(cfi, i)) continue
+      let range: Range | null = null
+      try {
+        range = new EpubCFI(cfi).toRange(m.doc)
+      } catch {
+        return
+      }
+      if (!range) return
+      try {
+        const fr = m.iframe.getBoundingClientRect()
+        const scTop = this.scroller.getBoundingClientRect().top
+        const rr = range.getBoundingClientRect()
+        const delta = fr.top + rr.top - (scTop + 10) // want it ~10px below the top
+        if (Math.abs(delta) > 4 && !this.isScrolling) {
+          this.correcting = true
+          this.scroller.scrollTop += delta
+          this.correcting = false
+        }
+        if (flash) this.flashRange(m, range)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+  }
+
+  private flashRange(m: Mounted, range: Range) {
+    try {
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width < 1 || r.height < 1) continue
+        const d = document.createElement('div')
+        Object.assign(d.style, {
+          position: 'absolute',
+          left: `${r.left}px`,
+          top: `${r.top}px`,
+          width: `${r.width}px`,
+          height: `${r.height}px`,
+          background: 'rgba(255, 211, 79, 0.5)',
+          borderRadius: '3px',
+          pointerEvents: 'none',
+          zIndex: '3',
+          animation: 'cfiFlash 1.8s ease forwards',
+        } as any)
+        m.el.appendChild(d)
+        window.setTimeout(() => d.remove(), 1900)
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   // ---- settings ----

@@ -532,6 +532,13 @@ button {
     transform: none;
   }
 }
+/* brief highlight over a citation/CFI jump target so you see where it landed */
+@keyframes cfiFlash {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  68% { opacity: 1; }
+  100% { opacity: 0; }
+}
 @keyframes slideInLeft {
   from {
     transform: translateX(-100%);

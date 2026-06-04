@@ -189,9 +189,18 @@ function blockChunks(
     if (!text) continue
     let cfi = ''
     try {
-      cfi = section.cfiFromElement(el)
+      // a range over the block resolves back far more reliably than an
+      // element CFI (this is the same path highlights use), so citation jumps
+      // land on the right paragraph
+      const range = doc.createRange()
+      range.selectNodeContents(el)
+      cfi = section.cfiFromRange(range)
     } catch {
-      /* best effort */
+      try {
+        cfi = section.cfiFromElement(el)
+      } catch {
+        /* best effort */
+      }
     }
     if (len > 0 && len + text.length > TARGET_CHARS) flush()
     cur.push({ text, cfi })

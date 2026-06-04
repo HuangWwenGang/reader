@@ -294,7 +294,7 @@ export default function Reader({
   function jumpToNote(h: Highlight) {
     setPanel(null)
     setEditor(null)
-    engineRef.current?.goTo(h.cfi)
+    engineRef.current?.goTo(h.cfi, { flash: true })
   }
 
   function navigateToc(href: string) {
@@ -405,7 +405,7 @@ export default function Reader({
           bookAuthor={author}
           quote={chatQuote}
           onQuoteConsumed={() => setChatQuote(null)}
-          jumpTo={(cfi) => engineRef.current?.goTo(cfi)}
+          jumpTo={(cfi) => engineRef.current?.goTo(cfi, { flash: true })}
           onClose={() => {
             setChatOpen(false)
             setChatQuote(null)
