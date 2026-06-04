@@ -21,6 +21,20 @@ export interface ChunkVector {
   vec: Float32Array
 }
 
+// One-sentence gist of a spine section, plus its embedding. This is the
+// "table of contents" index: whole-book / theme questions are answered from
+// these (a leaf-chunk search can't see the forest), and they double as a cheap
+// vector index for routing a question to the right chapter.
+export interface SectionSummary {
+  id: string // `${bookId}:s${sectionIndex}`
+  bookId: string
+  sectionIndex: number
+  title: string // section heading, when detectable (else '')
+  summary: string // 1–3 sentence gist of the section
+  cfi: string // section start CFI — lets a global answer jump to the chapter
+  vec: Float32Array // embedding of the summary
+}
+
 // Per-book index status, shown in the UI and used to resume indexing.
 export interface BookIndexMeta {
   bookId: string
@@ -89,6 +103,16 @@ export interface ChatSession {
   turns: ChatTurn[]
   createdAt: number
   updatedAt: number
+}
+
+// ---- query understanding ----
+// 'global' = whole-book / theme / summary question (answered from section
+// summaries); 'local' = a specific passage, fact, or term (answered from
+// leaf-chunk retrieval).
+export type QueryScope = 'global' | 'local'
+export interface QueryPlan {
+  standalone: string // the follow-up rewritten as a self-contained question
+  scope: QueryScope
 }
 
 export interface AIConfig {

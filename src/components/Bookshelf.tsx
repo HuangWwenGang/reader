@@ -104,6 +104,10 @@ export default function Bookshelf({
         const pct = pr.chunksTotal ? 90 + Math.round((pr.chunks / pr.chunksTotal) * 10) : 90
         return `向量化 ${Math.min(99, pct)}%`
       }
+      if (pr.phase === 'summary') {
+        const pct = pr.summariesTotal ? Math.round((pr.summariesDone ?? 0) / pr.summariesTotal * 100) : 0
+        return `通读全书 ${Math.min(99, pct)}%`
+      }
       return '索引中…'
     }
     const meta = metas[book.id]

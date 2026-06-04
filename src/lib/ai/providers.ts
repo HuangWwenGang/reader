@@ -36,7 +36,7 @@ async function openaiEmbed(
   } catch (e) {
     throw new Error(
       (e as Error)?.name === 'AbortError'
-        ? '向量接口超时（90s 无响应）'
+        ? '向量接口超时（180s 无响应）'
         : `向量接口请求失败：${(e as Error).message}`,
     )
   } finally {

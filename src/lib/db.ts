@@ -6,6 +6,7 @@ import type {
   BookIndexMeta,
   BookChat,
   ChatSession,
+  SectionSummary,
 } from './ai/types'
 
 interface ReaderDB extends DBSchema {
@@ -55,13 +56,21 @@ interface ReaderDB extends DBSchema {
     value: ChatSession
     indexes: { bookId: string }
   }
+  // one-sentence summary per spine section (+ its embedding) — the "table of
+  // contents" index that answers whole-book / theme questions a leaf-chunk
+  // search can't. Keyed by `${bookId}:s${sectionIndex}`.
+  summaries: {
+    key: string
+    value: SectionSummary
+    indexes: { bookId: string }
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDB>('reader-v1', 5, {
+    dbPromise = openDB<ReaderDB>('reader-v1', 6, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const books = db.createObjectStore('books', { keyPath: 'id' })
@@ -85,6 +94,10 @@ function getDB() {
         if (oldVersion < 5) {
           const sessions = db.createObjectStore('sessions', { keyPath: 'id' })
           sessions.createIndex('bookId', 'bookId')
+        }
+        if (oldVersion < 6) {
+          const summaries = db.createObjectStore('summaries', { keyPath: 'id' })
+          summaries.createIndex('bookId', 'bookId')
         }
       },
     })
@@ -157,11 +170,11 @@ export async function saveBookLocations(id: string, json: string): Promise<void>
 export async function deleteBook(id: string): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(
-    ['books', 'highlights', 'chunks', 'vectors', 'aimeta', 'chats', 'sessions'],
+    ['books', 'highlights', 'chunks', 'vectors', 'aimeta', 'chats', 'sessions', 'summaries'],
     'readwrite',
   )
   await tx.objectStore('books').delete(id)
-  for (const store of ['highlights', 'chunks', 'vectors', 'sessions'] as const) {
+  for (const store of ['highlights', 'chunks', 'vectors', 'sessions', 'summaries'] as const) {
     const s = tx.objectStore(store)
     const keys = await s.index('bookId').getAllKeys(id)
     await Promise.all(keys.map((k) => s.delete(k)))
@@ -203,13 +216,34 @@ export async function saveChunksWithVectors(
 
 export async function clearBookIndex(bookId: string): Promise<void> {
   const db = await getDB()
-  const tx = db.transaction(['chunks', 'vectors'], 'readwrite')
-  for (const store of ['chunks', 'vectors'] as const) {
+  const tx = db.transaction(['chunks', 'vectors', 'summaries'], 'readwrite')
+  for (const store of ['chunks', 'vectors', 'summaries'] as const) {
     const s = tx.objectStore(store)
     const keys = await s.index('bookId').getAllKeys(bookId)
     await Promise.all(keys.map((k) => s.delete(k)))
   }
   await tx.done
+}
+
+// ---- RAG: section summaries (the "table of contents" index) ----
+
+export async function getBookSummaries(bookId: string): Promise<SectionSummary[]> {
+  const db = await getDB()
+  const all = await db.getAllFromIndex('summaries', 'bookId', bookId)
+  return all.sort((a, b) => a.sectionIndex - b.sectionIndex)
+}
+
+export async function saveSummaries(items: SectionSummary[]): Promise<void> {
+  const db = await getDB()
+  const tx = db.transaction('summaries', 'readwrite')
+  const store = tx.objectStore('summaries')
+  for (const s of items) store.put(s)
+  await tx.done
+}
+
+export async function getBookSummaryCount(bookId: string): Promise<number> {
+  const db = await getDB()
+  return db.countFromIndex('summaries', 'bookId', bookId)
 }
 
 // All vectors for a book — small enough (a few MB) to brute-force cosine search.

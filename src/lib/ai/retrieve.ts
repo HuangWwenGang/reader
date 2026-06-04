@@ -1,7 +1,7 @@
 // Given a query embedding, find the most relevant chunks for a book. The user's
 // own notes get a small boost so their thinking surfaces alongside the source.
 import { getBookVectors, getChunksByIds, getBookChunks } from '../db'
-import { dot, norm, topK } from './vectorMath'
+import { dot, norm } from './vectorMath'
 import type { Chunk } from './types'
 
 export interface RetrievedChunk {
@@ -137,28 +137,10 @@ export async function expandHits(
       }
     }
     parts.sort((a, b) => a.seq - b.seq)
-    if (parts.length) out.push({ text: parts.map((p) => p.text).join('\n'), cfi: c.cfi, source: 'book' })
+    // always include the hit's own paragraph even if a prior block borrowed it
+    // as a neighbour, so every block (and its [编号]) maps to a real passage
+    if (!parts.some((p) => p.seq === seq)) parts.unshift({ seq, text: c.text })
+    out.push({ text: parts.map((p) => p.text).join('\n'), cfi: c.cfi, source: 'book' })
   }
   return out
-}
-
-export async function retrieve(
-  bookId: string,
-  queryVec: Float32Array,
-  k = 8,
-  noteBoost = 0.04,
-): Promise<RetrievedChunk[]> {
-  const vecs = await getBookVectors(bookId)
-  if (!vecs.length) return []
-  const scored = topK(
-    queryVec,
-    vecs.map((v) => ({ id: v.id, vec: v.vec })),
-    k,
-    (id) => (id.split(':')[1]?.startsWith('h') ? noteBoost : 0),
-  )
-  const chunks = await getChunksByIds(scored.map((s) => s.id))
-  const byId = new Map(chunks.map((c) => [c.id, c]))
-  return scored
-    .map((s) => ({ chunk: byId.get(s.id)!, score: s.score }))
-    .filter((r) => r.chunk)
 }

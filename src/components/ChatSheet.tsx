@@ -9,12 +9,52 @@ import {
 import { aiReady, loadAIConfig } from '../lib/ai/config'
 import { makeProvider } from '../lib/ai/providers'
 import { retrieveHybrid, expandHits } from '../lib/ai/retrieve'
+import { rerankHits } from '../lib/ai/rerank'
+import { planQuery } from '../lib/ai/queryPlanner'
+import { buildSummaries, pickSummaries } from '../lib/ai/summary'
 import type { ChatTurn, ChatMessage, ChatSession } from '../lib/ai/types'
 
 type Snap = 'peek' | 'half' | 'full'
 const SNAP_VH: Record<Snap, number> = { peek: 0.12, half: 0.52, full: 0.9 }
 const HISTORY_TURNS = 8
-const RETRIEVE_K = 12
+const RECALL_K = 24 // hybrid recall, before rerank
+const FINAL_K = 8 // passages kept after rerank, fed to the model
+
+// Local (specific-passage) retrieval: hybrid recall → LLM rerank → expand each
+// hit with its neighbours. Returns [ctx, sources, system, userMsg]. Sources are
+// derived from the SAME expanded blocks fed to the model, so the [编号] the model
+// cites always lines up with the tappable source (no citation/jump drift).
+async function localContext(
+  provider: ReturnType<typeof makeProvider>,
+  bookId: string,
+  qvec: Float32Array,
+  standalone: string,
+  usedQuote: string | undefined,
+  q: string,
+  signal: AbortSignal,
+  bookTitle: string,
+  bookAuthor?: string,
+): Promise<[string, { cfi: string; text: string }[], string, string]> {
+  const recalled = await retrieveHybrid(bookId, qvec, standalone, RECALL_K)
+  const hits = await rerankHits(provider, standalone, recalled, FINAL_K, signal)
+  const blocks = await expandHits(bookId, hits, 1)
+  const ctx = blocks
+    .map((b, i) => `[${i + 1}]${b.source === 'note' ? '（我的笔记）' : ''} ${b.text}`)
+    .join('\n\n')
+  const sources = blocks.map((b) => ({ cfi: b.cfi, text: b.text }))
+  const system =
+    `你是帮助读者理解《${bookTitle}》${bookAuthor ? `（${bookAuthor}）` : ''}的阅读助手。这是一本严肃的非虚构作品。\n` +
+    `严格遵守：\n` +
+    `1. 只依据下面的「原文资料」回答,引用具体内容时用 [编号] 标注来源;\n` +
+    `2. 绝不编造人物、情节、事实或书中没有的内容。若「原文资料」里没有与问题直接相关的内容,就明确说"检索到的原文里没有找到关于『…』的内容,可能这一节没被准确检索到",并建议用户换个说法、或在书里选中那一段再问——不要硬凑答案;\n` +
+    `3. 不要把它当小说去总结"人物/情节",按它实际的论述与案例来回答;\n` +
+    `4. 中文,有条理(可分点),忠于原文,不啰嗦。`
+  const userMsg =
+    `【原文资料】\n${ctx}\n\n` +
+    (usedQuote ? `【我正在读的段落】\n${usedQuote}\n\n` : '') +
+    `【问题】\n${q || standalone || '请解释我正在读的这段,并联系全书的相关内容。'}`
+  return [ctx, sources, system, userMsg]
+}
 
 const snapHeight = (s: Snap) => Math.round(window.innerHeight * SNAP_VH[s])
 const newSession = (bookId: string): ChatSession => ({
@@ -162,22 +202,6 @@ export default function ChatSheet({
     abortRef.current = ac
     try {
       const provider = makeProvider(cfg)
-      const queryText = [usedQuote, q].filter(Boolean).join('\n')
-      const [qvec] = await provider.embed([queryText])
-      const hits = await retrieveHybrid(bookId, qvec, queryText, RETRIEVE_K)
-      if (ac.signal.aborted) return
-      const blocks = await expandHits(bookId, hits, 1)
-      if (ac.signal.aborted) return
-      const sources = hits.map((h) => ({ cfi: h.chunk.cfi, text: h.chunk.text }))
-
-      const ctx = blocks.map((b, i) => `[${i + 1}]${b.source === 'note' ? '（我的笔记）' : ''} ${b.text}`).join('\n\n')
-      const system =
-        `你是帮助读者理解《${bookTitle}》${bookAuthor ? `（${bookAuthor}）` : ''}的阅读助手。这是一本严肃的非虚构作品。\n` +
-        `严格遵守：\n` +
-        `1. 只依据下面的「原文资料」回答,引用具体内容时用 [编号] 标注来源;\n` +
-        `2. 绝不编造人物、情节、事实或书中没有的内容。若「原文资料」里没有与问题直接相关的内容,就明确说"检索到的原文里没有找到关于『…』的内容,可能这一节没被准确检索到",并建议用户换个说法、或在书里选中那一段再问——不要硬凑答案;\n` +
-        `3. 不要把它当小说去总结"人物/情节",按它实际的论述与案例来回答;\n` +
-        `4. 中文,有条理(可分点),忠于原文,不啰嗦。`
       const history: ChatMessage[] = curRef.current.turns
         .slice(0, -1)
         .slice(-HISTORY_TURNS)
@@ -185,10 +209,45 @@ export default function ChatSheet({
           role: t.role,
           content: t.role === 'user' && t.quote ? `「${t.quote}」\n${t.content}` : t.content,
         }))
-      const userMsg =
-        `【原文资料】\n${ctx}\n\n` +
-        (usedQuote ? `【我正在读的段落】\n${usedQuote}\n\n` : '') +
-        `【问题】\n${q || '请解释我正在读的这段,并联系全书的相关内容。'}`
+
+      // 1. understand the question: rewrite follow-ups into a standalone query
+      //    (so retrieval has context) and route global vs local.
+      const plan = await planQuery(provider, { question: q, quote: usedQuote, history, signal: ac.signal })
+      if (ac.signal.aborted) return
+      const [qvec] = await provider.embed([plan.standalone])
+      if (ac.signal.aborted) return
+
+      let ctx: string
+      let sources: { cfi: string; text: string }[]
+      let system: string
+      let userMsg: string
+
+      if (plan.scope === 'global') {
+        // whole-book question → answer from the section-summary index, lazily
+        // building it if this book was indexed before summaries existed.
+        const summaries = await buildSummaries(bookId, provider, { signal: ac.signal }).catch(() => [])
+        if (ac.signal.aborted) return
+        const picked = pickSummaries(summaries, qvec)
+        if (picked.length) {
+          ctx = picked.map((s, i) => `[${i + 1}] ${s.title ? s.title + '：' : ''}${s.summary}`).join('\n')
+          sources = picked.map((s) => ({ cfi: s.cfi, text: s.title || s.summary }))
+          system =
+            `你是帮助读者理解《${bookTitle}》${bookAuthor ? `（${bookAuthor}）` : ''}的阅读助手。这是一本严肃的非虚构作品。\n` +
+            `下面「各节要点」是全书每一节的概要（按阅读顺序），用它来回答关于全书的总体性问题。\n` +
+            `严格遵守：\n` +
+            `1. 综观各节要点,梳理出贯穿全书的脉络/主旨/论点来回答,引用某一节时用 [编号] 标注;\n` +
+            `2. 只依据这些要点,不要编造书里没有的内容;要点不足以回答时,如实说明;\n` +
+            `3. 中文,有条理(可分点),抓重点,不啰嗦。`
+          userMsg = `【各节要点】\n${ctx}\n\n【问题】\n${plan.standalone}`
+        } else {
+          // no summaries available → fall back to leaf retrieval
+          ;[ctx, sources, system, userMsg] = await localContext(provider, bookId, qvec, plan.standalone, usedQuote, q, ac.signal, bookTitle, bookAuthor)
+        }
+      } else {
+        ;[ctx, sources, system, userMsg] = await localContext(provider, bookId, qvec, plan.standalone, usedQuote, q, ac.signal, bookTitle, bookAuthor)
+      }
+      if (ac.signal.aborted) return
+      void ctx
 
       const assistant: ChatTurn = { role: 'assistant', content: '', sources, ts: Date.now() }
       setTurns([...curRef.current.turns, assistant], false)

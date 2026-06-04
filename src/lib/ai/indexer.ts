@@ -12,6 +12,7 @@ import {
 import { openBookFromBuffer } from '../epub'
 import { loadAIConfig } from './config'
 import { makeProvider } from './providers'
+import { buildSummaries } from './summary'
 import type { Chunk } from './types'
 
 const TARGET_CHARS = 320
@@ -20,11 +21,13 @@ const EMBED_BATCH = 48 // fewer round-trips for a latency-bound relay
 const EMBED_CONCURRENCY = 4 // run several batches at once to beat slow relays
 
 export interface IndexProgress {
-  phase: 'render' | 'embed' | 'done' | 'error'
+  phase: 'render' | 'embed' | 'summary' | 'done' | 'error'
   sectionsDone: number
   sectionsTotal: number
   chunks: number
   chunksTotal?: number // total chunks to embed (for embed-phase progress)
+  summariesDone?: number // section summaries built (summary phase)
+  summariesTotal?: number
   error?: string
 }
 
@@ -125,6 +128,23 @@ export async function indexBook(
     }
     await Promise.all(Array.from({ length: EMBED_CONCURRENCY }, worker))
     if (failed) throw failed
+
+    // 4. section summaries (the "table of contents" index for global questions).
+    //    Built from the chunks just stored — best-effort: a relay hiccup here
+    //    must not fail the whole index (leaf retrieval still works without it;
+    //    summaries fill in lazily on the first global question).
+    try {
+      await buildSummaries(bookId, provider, {
+        onProgress: ({ done, total }) =>
+          onProgress?.({
+            phase: 'summary', sectionsDone: total, sectionsTotal: total,
+            chunks: chunks.length, summariesDone: done, summariesTotal: total,
+          }),
+      })
+    } catch {
+      /* leave summaries to the lazy path */
+    }
+
     await saveBookIndexMeta({
       bookId, state: 'ready', model: provider.embedModel, dim: provider.embedDim,
       chunkCount: chunks.length, sectionsDone: total, sectionsTotal: total, updatedAt: Date.now(),
