@@ -1,6 +1,12 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { Book, Highlight } from './types'
-import type { Chunk, ChunkVector, BookIndexMeta, BookChat } from './ai/types'
+import type {
+  Chunk,
+  ChunkVector,
+  BookIndexMeta,
+  BookChat,
+  ChatSession,
+} from './ai/types'
 
 interface ReaderDB extends DBSchema {
   books: {
@@ -38,10 +44,16 @@ interface ReaderDB extends DBSchema {
     key: string
     value: BookIndexMeta
   }
-  // persistent AI chat thread, one per book
+  // persistent AI chat thread, one per book (legacy, kept for migration)
   chats: {
     key: string
     value: BookChat
+  }
+  // multiple AI conversations per book
+  sessions: {
+    key: string
+    value: ChatSession
+    indexes: { bookId: string }
   }
 }
 
@@ -49,7 +61,7 @@ let dbPromise: Promise<IDBPDatabase<ReaderDB>> | null = null
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReaderDB>('reader-v1', 4, {
+    dbPromise = openDB<ReaderDB>('reader-v1', 5, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const books = db.createObjectStore('books', { keyPath: 'id' })
@@ -69,6 +81,10 @@ function getDB() {
         }
         if (oldVersion < 4) {
           db.createObjectStore('chats', { keyPath: 'bookId' })
+        }
+        if (oldVersion < 5) {
+          const sessions = db.createObjectStore('sessions', { keyPath: 'id' })
+          sessions.createIndex('bookId', 'bookId')
         }
       },
     })
@@ -141,11 +157,11 @@ export async function saveBookLocations(id: string, json: string): Promise<void>
 export async function deleteBook(id: string): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(
-    ['books', 'highlights', 'chunks', 'vectors', 'aimeta', 'chats'],
+    ['books', 'highlights', 'chunks', 'vectors', 'aimeta', 'chats', 'sessions'],
     'readwrite',
   )
   await tx.objectStore('books').delete(id)
-  for (const store of ['highlights', 'chunks', 'vectors'] as const) {
+  for (const store of ['highlights', 'chunks', 'vectors', 'sessions'] as const) {
     const s = tx.objectStore(store)
     const keys = await s.index('bookId').getAllKeys(id)
     await Promise.all(keys.map((k) => s.delete(k)))
@@ -213,21 +229,27 @@ export async function getBookChunkCount(bookId: string): Promise<number> {
   return db.countFromIndex('chunks', 'bookId', bookId)
 }
 
-// ---- per-book AI chat thread ----
+// ---- per-book AI chat sessions (multiple conversations) ----
 
-export async function getChat(bookId: string): Promise<BookChat | undefined> {
+export async function getSessions(bookId: string): Promise<ChatSession[]> {
   const db = await getDB()
-  return db.get('chats', bookId)
+  const all = await db.getAllFromIndex('sessions', 'bookId', bookId)
+  return all.sort((a, b) => b.updatedAt - a.updatedAt) // newest first
 }
 
-export async function saveChat(chat: BookChat): Promise<void> {
+export async function getSession(id: string): Promise<ChatSession | undefined> {
   const db = await getDB()
-  await db.put('chats', chat)
+  return db.get('sessions', id)
 }
 
-export async function clearChat(bookId: string): Promise<void> {
+export async function saveSession(s: ChatSession): Promise<void> {
   const db = await getDB()
-  await db.delete('chats', bookId)
+  await db.put('sessions', s)
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const db = await getDB()
+  await db.delete('sessions', id)
 }
 
 // ---- Highlights ----

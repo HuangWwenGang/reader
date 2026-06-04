@@ -41,6 +41,7 @@ export default function Reader({
   const resumeCfiRef = useRef<string | null>(null)
 
   const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState<string | undefined>(undefined)
   const [toc, setToc] = useState<TocItem[]>([])
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [panel, setPanel] = useState<'toc' | 'notes' | null>(null)
@@ -100,6 +101,7 @@ export default function Reader({
       }
       if (cancelled) return
       setTitle(rec.title)
+      setAuthor(rec.author)
       let buf: ArrayBuffer | null = rec.file ?? null
       const legacy = (rec as any).fileBlob as Blob | undefined
       if (!buf && legacy?.arrayBuffer) {
@@ -319,6 +321,13 @@ export default function Reader({
         ‹
       </button>
       <button
+        className="float-ctrl ai"
+        onClick={() => { setChatQuote(null); setChatOpen(true) }}
+        aria-label="AI 对话"
+      >
+        AI
+      </button>
+      <button
         className="float-ctrl menu"
         onClick={() => setMenuOpen(true)}
         aria-label="菜单"
@@ -392,6 +401,8 @@ export default function Reader({
       {chatOpen && (
         <ChatSheet
           bookId={bookId}
+          bookTitle={title}
+          bookAuthor={author}
           quote={chatQuote}
           onQuoteConsumed={() => setChatQuote(null)}
           jumpTo={(cfi) => engineRef.current?.goTo(cfi)}

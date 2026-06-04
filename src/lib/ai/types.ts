@@ -81,6 +81,16 @@ export interface BookChat {
   updatedAt: number
 }
 
+// one conversation among several a book can have
+export interface ChatSession {
+  id: string
+  bookId: string
+  title: string // auto from the first question
+  turns: ChatTurn[]
+  createdAt: number
+  updatedAt: number
+}
+
 export interface AIConfig {
   chatVendor: ChatVendor
   anthropicKey: string

@@ -1448,3 +1448,82 @@ button {
 .chat-input-row .ai-input {
   flex: 1;
 }
+
+/* standalone AI button (above the menu button) */
+.float-ctrl.ai {
+  bottom: max(98px, calc(env(safe-area-inset-bottom) + 90px));
+  right: 26px;
+  width: 56px;
+  height: 56px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* chat session switcher + list */
+.chat-sess-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  max-width: 64vw;
+}
+.chat-sess-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-sess-caret {
+  font-size: 11px;
+  color: var(--muted);
+}
+.chat-sesslist {
+  gap: 6px;
+}
+.chat-sess-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, 0.08);
+  cursor: pointer;
+}
+.chat-sess-row.active {
+  background: rgba(127, 127, 127, 0.18);
+}
+.chat-sess-row.new {
+  justify-content: center;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+.chat-sess-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.chat-sess-row-title {
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-sess-row-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.chat-sess-del {
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  padding: 4px 6px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
