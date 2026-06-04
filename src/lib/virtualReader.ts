@@ -656,12 +656,24 @@ export class VirtualReader {
   }
 
   private async relayout() {
-    if (this.destroyed || !this.scroller) return
+    if (this.destroyed || !this.scroller) {
+      this.resizeAnchorCfi = undefined
+      return
+    }
     const w = this.scroller.clientWidth
-    if (w === this.lastWidth || w === 0) return // height-only change → no reflow
-    this.lastWidth = w
-    if (this.relayoutPending) return
+    if (w === this.lastWidth || w === 0) {
+      // Height-only visualViewport changes should not leave a stale frozen CFI
+      // behind for the next real orientation flip.
+      this.resizeAnchorCfi = undefined
+      return
+    }
+    if (this.relayoutPending) {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer)
+      this.resizeTimer = window.setTimeout(() => this.relayout(), 120)
+      return
+    }
     this.relayoutPending = true
+    this.lastWidth = w
     const cfi = this.resizeAnchorCfi ?? this.lastCfi ?? this.currentCfi()
     try {
       // re-seed width-dependent state (estimate + cache key both depend on width)
