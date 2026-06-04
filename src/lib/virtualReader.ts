@@ -26,6 +26,7 @@ import type { Highlight } from './types'
 const BUFFER = 1.6 // load/keep chapters within ±this many screens of the viewport
 const RECYCLE = 2.6 // recycle chapters beyond ±this many screens
 const SAVE_DEBOUNCE = 300
+const VISUAL_ANCHOR_RATIO = 0.28
 // Bump when readerCss changes the rendered metrics (weight/tracking/etc.) so old
 // height caches — measured with the previous CSS — are invalidated instead of
 // silently feeding wrong heights (which causes mid-read scroll corrections).
@@ -47,6 +48,11 @@ interface Mounted {
   loaded: Promise<void>
   drawn: { id: string; rects: DOMRect[] }[]
   measured?: boolean // has had its first real (content) measure
+}
+
+interface VisualAnchor {
+  cfi: string
+  offset: number
 }
 
 export interface VirtualReaderCallbacks {
@@ -98,9 +104,10 @@ export class VirtualReader {
   private fromCache = false
   private cacheComplete = false
   private lastCfi: string | undefined // most recent reading position (for re-layout)
+  private visualAnchor: VisualAnchor | undefined
   private lastWidth = 0
   private resizeTimer: number | null = null
-  private resizeAnchorCfi: string | undefined
+  private resizeAnchorCfi: string | undefined // reading position frozen before a reflow
   private relayoutPending = false
 
   constructor(
@@ -214,6 +221,7 @@ export class VirtualReader {
     this.correcting = false
     this.anchorIndex = i0
     this.fillWindow()
+    this.updateVisualAnchor()
 
     this.scroller.addEventListener('scroll', this.onScroll, { passive: true })
     this.lastWidth = this.scroller.clientWidth
@@ -543,8 +551,7 @@ export class VirtualReader {
     requestAnimationFrame(() => {
       this.rafPending = false
       this.updateAnchor()
-      const cfi = this.currentCfi()
-      if (cfi) this.lastCfi = cfi
+      this.updateVisualAnchor()
       this.fillWindow()
       this.scheduleRelocate()
     })
@@ -572,8 +579,19 @@ export class VirtualReader {
   }
 
   currentCfi(): string | undefined {
+    return this.cfiAtViewportOffset(2)?.cfi
+  }
+
+  private visualAnchorOffset(): number {
+    const h = this.scroller?.clientHeight ?? 0
+    if (h <= 0) return 2
+    return Math.max(32, Math.min(Math.round(h * VISUAL_ANCHOR_RATIO), h - 32))
+  }
+
+  private cfiAtViewportOffset(offset: number): VisualAnchor | undefined {
     if (!this.scroller) return undefined
-    const probeY = this.scroller.getBoundingClientRect().top + 2
+    const scTop = this.scroller.getBoundingClientRect().top
+    const probeY = scTop + offset
     for (const [i, m] of this.mounted) {
       if (!m.doc) continue
       const fr = m.iframe.getBoundingClientRect()
@@ -594,7 +612,10 @@ export class VirtualReader {
       if (!range) range = this.rangeFromContentY(m.doc, localY)
       if (range) {
         try {
-          return this.sections[i].cfiFromRange(range)
+          const cfi = this.sections[i].cfiFromRange(range)
+          const rr = range.getBoundingClientRect()
+          const rangeOffset = Number.isFinite(rr.top) ? rr.top + fr.top - scTop : offset
+          return { cfi, offset: rangeOffset }
         } catch {
           return undefined
         }
@@ -602,6 +623,49 @@ export class VirtualReader {
       return undefined
     }
     return undefined
+  }
+
+  private captureVisualAnchor(): VisualAnchor | undefined {
+    return this.cfiAtViewportOffset(this.visualAnchorOffset()) ?? this.cfiAtViewportOffset(2)
+  }
+
+  private updateVisualAnchor() {
+    const anchor = this.captureVisualAnchor()
+    if (!anchor) return
+    this.visualAnchor = anchor
+    this.lastCfi = anchor.cfi
+  }
+
+  private restoreVisualAnchor(anchor = this.visualAnchor): boolean {
+    if (!anchor || this.destroyed || !this.scroller || this.isScrolling) return false
+    let sec: any
+    try {
+      sec = this.book.spine.get(anchor.cfi)
+    } catch {
+      sec = null
+    }
+    if (!sec) return false
+    const i = this.sections.findIndex((s) => s.index === sec.index)
+    const m = this.mounted.get(i)
+    if (!m?.doc) return false
+    try {
+      const range = new EpubCFI(anchor.cfi).toRange(m.doc)
+      if (!range) return false
+      const fr = m.iframe.getBoundingClientRect()
+      const rr = range.getBoundingClientRect()
+      const scTop = this.scroller.getBoundingClientRect().top
+      const currentOffset = rr.top + fr.top - scTop
+      const delta = currentOffset - anchor.offset
+      if (!Number.isFinite(delta) || Math.abs(delta) < 0.5) return true
+      this.correcting = true
+      this.scroller.scrollTop += delta
+      this.correcting = false
+      this.visualAnchor = anchor
+      this.lastCfi = anchor.cfi
+      return true
+    } catch {
+      return false
+    }
   }
 
   private rangeFromContentY(doc: Document, y: number): Range | null {
@@ -690,10 +754,15 @@ export class VirtualReader {
       this.realHeight = this.sections.map(() => this.fromCache)
       this.hCount = this.fromCache ? N : 0
       this.hSum = this.fromCache ? this.heights.reduce((a, b) => a + b, 0) : 0
-      // goTo re-mounts the target fresh at the new width and lands on the CFI,
-      // so the reader stays exactly where it was reading.
-      if (cfi) await this.goTo(cfi)
-      else for (const [i] of this.mounted) this.measure(i)
+      // goTo re-mounts the target fresh at the new width and lands on the CFI;
+      // then nudge it to the same vertical offset it had before the reflow, so
+      // the line you were reading returns to where your eye was (not the top).
+      if (cfi) {
+        await this.goTo(cfi)
+        this.restoreVisualAnchor()
+      } else {
+        for (const [i] of this.mounted) this.measure(i)
+      }
       if (!this.cacheComplete && !this.premeasuring) {
         const ric = (window as any).requestIdleCallback
         if (typeof ric === 'function') ric(() => this.premeasureAll(), { timeout: 2000 })

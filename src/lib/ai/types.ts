@@ -63,6 +63,24 @@ export interface AIProvider {
 // Claude too. 'anthropic' = native Anthropic /messages.
 export type ChatVendor = 'anthropic' | 'openai'
 
+// ---- persistent chat thread (per book) ----
+export interface ChatSource {
+  cfi: string
+  text: string
+}
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+  quote?: string // user turn: the selected passage attached as context
+  sources?: ChatSource[] // assistant turn: cited chunks (tap to jump)
+  ts: number
+}
+export interface BookChat {
+  bookId: string
+  turns: ChatTurn[]
+  updatedAt: number
+}
+
 export interface AIConfig {
   chatVendor: ChatVendor
   anthropicKey: string

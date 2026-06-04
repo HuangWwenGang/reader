@@ -21,7 +21,7 @@ import HighlightEditor, { type EditorTarget } from './HighlightEditor'
 import TocPanel, { type TocItem } from './TocPanel'
 import NotesPanel from './NotesPanel'
 import SettingsSheet from './SettingsSheet'
-import AskPanel from './AskPanel'
+import ChatSheet from './ChatSheet'
 
 export default function Reader({
   bookId,
@@ -45,7 +45,8 @@ export default function Reader({
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [panel, setPanel] = useState<'toc' | 'notes' | null>(null)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
-  const [ask, setAsk] = useState<string | null>(null) // selected text being asked about
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatQuote, setChatQuote] = useState<string | null>(null) // selection to attach
   const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>(() => loadSettings())
@@ -381,18 +382,30 @@ export default function Reader({
             onAsk={() => {
               const q = editor.text
               setEditor(null)
-              setAsk(q)
+              setChatQuote(q)
+              setChatOpen(true)
             }}
           />
         </>
       )}
 
-      {ask && (
-        <AskPanel
+      {chatOpen && (
+        <ChatSheet
           bookId={bookId}
-          quote={ask}
-          onJump={(cfi) => engineRef.current?.goTo(cfi)}
-          onClose={() => setAsk(null)}
+          quote={chatQuote}
+          onQuoteConsumed={() => setChatQuote(null)}
+          jumpTo={(cfi) => engineRef.current?.goTo(cfi)}
+          onClose={() => {
+            setChatOpen(false)
+            setChatQuote(null)
+            if (stageRef.current) stageRef.current.style.bottom = ''
+          }}
+          onHeight={(px) => {
+            // push the reader up above the sheet so text is never covered
+            if (stageRef.current) {
+              stageRef.current.style.bottom = Math.min(px, window.innerHeight * 0.55) + 'px'
+            }
+          }}
         />
       )}
 
