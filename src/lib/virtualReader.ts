@@ -97,6 +97,10 @@ export class VirtualReader {
   private bookId = ''
   private fromCache = false
   private cacheComplete = false
+  private lastCfi: string | undefined // most recent reading position (for re-layout)
+  private lastWidth = 0
+  private resizeTimer: number | null = null
+  private relayoutPending = false
 
   constructor(
     book: any,
@@ -211,6 +215,9 @@ export class VirtualReader {
     this.fillWindow()
 
     this.scroller.addEventListener('scroll', this.onScroll, { passive: true })
+    this.lastWidth = this.scroller.clientWidth
+    window.addEventListener('resize', this.onResize)
+    window.addEventListener('orientationchange', this.onResize)
     this.emitRelocate()
 
     // Run the whole-book premeasure unless we already have a COMPLETE cache.
@@ -230,6 +237,9 @@ export class VirtualReader {
     this.destroyed = true
     if (this.saveTimer) clearTimeout(this.saveTimer)
     if (this.scrollIdle) clearTimeout(this.scrollIdle)
+    if (this.resizeTimer) clearTimeout(this.resizeTimer)
+    window.removeEventListener('resize', this.onResize)
+    window.removeEventListener('orientationchange', this.onResize)
     try {
       this.mIframe?.remove()
     } catch {
@@ -627,8 +637,56 @@ export class VirtualReader {
     this.saveTimer = window.setTimeout(() => this.emitRelocate(), SAVE_DEBOUNCE)
   }
 
+  // On a width change (orientation flip / split-view resize) the content reflows
+  // to a new width — every chapter's height changes, so the old pixel scrollTop
+  // points somewhere else (drift). Re-key the height cache for the new width and
+  // restore the reading position by CFI once the dust settles.
+  private onResize = () => {
+    if (this.destroyed) return
+    if (this.resizeTimer) clearTimeout(this.resizeTimer)
+    this.resizeTimer = window.setTimeout(() => this.relayout(), 250)
+  }
+
+  private async relayout() {
+    if (this.destroyed || !this.scroller) return
+    const w = this.scroller.clientWidth
+    if (w === this.lastWidth || w === 0) return // height-only change → no reflow
+    this.lastWidth = w
+    if (this.relayoutPending) return
+    this.relayoutPending = true
+    const cfi = this.currentCfi() ?? this.lastCfi
+    try {
+      // re-seed width-dependent state (estimate + cache key both depend on width)
+      this.estH = Math.max(800, Math.round(this.scroller.clientHeight * 1.4))
+      const key = `${this.bookId}:${this.layoutKey()}`
+      const cached = await getHeights(key)
+      const N = this.sections.length
+      this.fromCache = !!(cached && cached.length === N)
+      this.cacheComplete = this.fromCache && (await getHeightsComplete(key))
+      for (let i = 0; i < N; i++) {
+        if (this.mounted.has(i)) continue
+        this.heights[i] = this.fromCache ? cached![i] : this.estH
+      }
+      this.realHeight = this.sections.map(() => this.fromCache)
+      this.hCount = this.fromCache ? N : 0
+      this.hSum = this.fromCache ? this.heights.reduce((a, b) => a + b, 0) : 0
+      // goTo re-mounts the target fresh at the new width and lands on the CFI,
+      // so the reader stays exactly where it was reading.
+      if (cfi) await this.goTo(cfi)
+      else for (const [i] of this.mounted) this.measure(i)
+      if (!this.cacheComplete && !this.premeasuring) {
+        const ric = (window as any).requestIdleCallback
+        if (typeof ric === 'function') ric(() => this.premeasureAll(), { timeout: 2000 })
+        else window.setTimeout(() => this.premeasureAll(), 600)
+      }
+    } finally {
+      this.relayoutPending = false
+    }
+  }
+
   private emitRelocate() {
     const cfi = this.currentCfi()
+    if (cfi) this.lastCfi = cfi // remembered so we can restore it across a re-layout
     let percentage = this.sections.length
       ? this.anchorIndex / this.sections.length
       : 0
