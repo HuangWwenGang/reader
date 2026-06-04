@@ -21,7 +21,7 @@ async function openaiEmbed(
   // hard timeout so a hung relay surfaces as an error instead of stalling the
   // whole index build forever
   const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), 90_000)
+  const timer = setTimeout(() => ac.abort(), 180_000)
   let res: Response
   try {
     res = await fetch(`${trimBase(base)}/embeddings`, {

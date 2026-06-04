@@ -5,7 +5,7 @@
 import {
   getBook,
   getHighlights,
-  clearBookIndex,
+  getBookVectors,
   saveChunksWithVectors,
   saveBookIndexMeta,
 } from '../db'
@@ -16,7 +16,8 @@ import type { Chunk } from './types'
 
 const TARGET_CHARS = 320
 const BLOCK_SEL = 'p, li, blockquote, dd, h1, h2, h3, h4, h5, h6'
-const EMBED_BATCH = 32 // smaller batches: friendlier to third-party relays
+const EMBED_BATCH = 48 // fewer round-trips for a latency-bound relay
+const EMBED_CONCURRENCY = 4 // run several batches at once to beat slow relays
 
 export interface IndexProgress {
   phase: 'render' | 'embed' | 'done' | 'error'
@@ -55,7 +56,8 @@ export async function indexBook(
   const chunks: Chunk[] = []
   let seq = 0
   try {
-    await clearBookIndex(bookId)
+    // NOTE: do NOT clear the existing index — re-running resumes (skips chunks
+    // that already have a vector), so a slow/flaky relay can finish across tries.
     await saveBookIndexMeta({
       bookId, state: 'indexing', model: provider.embedModel, dim: provider.embedDim,
       chunkCount: 0, sectionsDone: 0, sectionsTotal: total, updatedAt: Date.now(),
@@ -82,28 +84,47 @@ export async function indexBook(
       })
     }
 
-    // 3. embed in batches and collect vectors (retry each batch once on failure)
-    const items: { chunk: Chunk; vec: Float32Array }[] = []
-    let embedded = 0
-    for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
-      const batch = chunks.slice(i, i + EMBED_BATCH)
-      const texts = batch.map((c) => c.text)
-      let vecs: Float32Array[]
-      try {
-        vecs = await provider.embed(texts)
-      } catch {
-        await new Promise((r) => setTimeout(r, 800))
-        vecs = await provider.embed(texts) // one retry; throws if it fails again
-      }
-      batch.forEach((c, j) => items.push({ chunk: c, vec: vecs[j] }))
-      embedded += batch.length
-      onProgress?.({
-        phase: 'embed', sectionsDone: total, sectionsTotal: total,
-        chunks: embedded, chunksTotal: chunks.length,
-      })
-    }
+    // 3. embed only the chunks that don't already have a vector (resume), saving
+    //    each batch as it lands, with several batches in flight at once.
+    const haveVec = new Set((await getBookVectors(bookId)).map((v) => v.id))
+    const todo = chunks.filter((c) => !haveVec.has(c.id))
+    let done = chunks.length - todo.length
+    onProgress?.({
+      phase: 'embed', sectionsDone: total, sectionsTotal: total,
+      chunks: done, chunksTotal: chunks.length,
+    })
 
-    await saveChunksWithVectors(bookId, items)
+    let cursor = 0
+    let failed: Error | null = null
+    const worker = async () => {
+      for (;;) {
+        const start = cursor
+        cursor += EMBED_BATCH
+        if (start >= todo.length || failed) return
+        const batch = todo.slice(start, start + EMBED_BATCH)
+        const texts = batch.map((c) => c.text)
+        let vecs: Float32Array[]
+        try {
+          vecs = await provider.embed(texts)
+        } catch {
+          await new Promise((r) => setTimeout(r, 800))
+          try {
+            vecs = await provider.embed(texts)
+          } catch (e) {
+            failed = e as Error
+            return
+          }
+        }
+        await saveChunksWithVectors(bookId, batch.map((c, j) => ({ chunk: c, vec: vecs[j] })))
+        done += batch.length
+        onProgress?.({
+          phase: 'embed', sectionsDone: total, sectionsTotal: total,
+          chunks: done, chunksTotal: chunks.length,
+        })
+      }
+    }
+    await Promise.all(Array.from({ length: EMBED_CONCURRENCY }, worker))
+    if (failed) throw failed
     await saveBookIndexMeta({
       bookId, state: 'ready', model: provider.embedModel, dim: provider.embedDim,
       chunkCount: chunks.length, sectionsDone: total, sectionsTotal: total, updatedAt: Date.now(),
