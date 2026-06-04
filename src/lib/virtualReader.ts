@@ -100,6 +100,7 @@ export class VirtualReader {
   private lastCfi: string | undefined // most recent reading position (for re-layout)
   private lastWidth = 0
   private resizeTimer: number | null = null
+  private resizeAnchorCfi: string | undefined
   private relayoutPending = false
 
   constructor(
@@ -218,6 +219,7 @@ export class VirtualReader {
     this.lastWidth = this.scroller.clientWidth
     window.addEventListener('resize', this.onResize)
     window.addEventListener('orientationchange', this.onResize)
+    window.visualViewport?.addEventListener('resize', this.onResize)
     this.emitRelocate()
 
     // Run the whole-book premeasure unless we already have a COMPLETE cache.
@@ -240,6 +242,7 @@ export class VirtualReader {
     if (this.resizeTimer) clearTimeout(this.resizeTimer)
     window.removeEventListener('resize', this.onResize)
     window.removeEventListener('orientationchange', this.onResize)
+    window.visualViewport?.removeEventListener('resize', this.onResize)
     try {
       this.mIframe?.remove()
     } catch {
@@ -540,6 +543,8 @@ export class VirtualReader {
     requestAnimationFrame(() => {
       this.rafPending = false
       this.updateAnchor()
+      const cfi = this.currentCfi()
+      if (cfi) this.lastCfi = cfi
       this.fillWindow()
       this.scheduleRelocate()
     })
@@ -643,6 +648,9 @@ export class VirtualReader {
   // restore the reading position by CFI once the dust settles.
   private onResize = () => {
     if (this.destroyed) return
+    // Freeze the pre-resize reading anchor. Once iOS has reflowed the iframes to
+    // the new width, asking the DOM for "current" CFI can already be wrong.
+    if (!this.resizeAnchorCfi) this.resizeAnchorCfi = this.lastCfi ?? this.currentCfi()
     if (this.resizeTimer) clearTimeout(this.resizeTimer)
     this.resizeTimer = window.setTimeout(() => this.relayout(), 250)
   }
@@ -654,7 +662,7 @@ export class VirtualReader {
     this.lastWidth = w
     if (this.relayoutPending) return
     this.relayoutPending = true
-    const cfi = this.currentCfi() ?? this.lastCfi
+    const cfi = this.resizeAnchorCfi ?? this.lastCfi ?? this.currentCfi()
     try {
       // re-seed width-dependent state (estimate + cache key both depend on width)
       this.estH = Math.max(800, Math.round(this.scroller.clientHeight * 1.4))
@@ -680,6 +688,7 @@ export class VirtualReader {
         else window.setTimeout(() => this.premeasureAll(), 600)
       }
     } finally {
+      this.resizeAnchorCfi = undefined
       this.relayoutPending = false
     }
   }
