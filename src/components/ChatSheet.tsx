@@ -8,7 +8,7 @@ import {
 } from '../lib/db'
 import { aiReady, loadAIConfig } from '../lib/ai/config'
 import { makeProvider } from '../lib/ai/providers'
-import { retrieve, expandHits } from '../lib/ai/retrieve'
+import { retrieveHybrid, expandHits } from '../lib/ai/retrieve'
 import type { ChatTurn, ChatMessage, ChatSession } from '../lib/ai/types'
 
 type Snap = 'peek' | 'half' | 'full'
@@ -162,8 +162,9 @@ export default function ChatSheet({
     abortRef.current = ac
     try {
       const provider = makeProvider(cfg)
-      const [qvec] = await provider.embed([[usedQuote, q].filter(Boolean).join('\n')])
-      const hits = await retrieve(bookId, qvec, RETRIEVE_K)
+      const queryText = [usedQuote, q].filter(Boolean).join('\n')
+      const [qvec] = await provider.embed([queryText])
+      const hits = await retrieveHybrid(bookId, qvec, queryText, RETRIEVE_K)
       if (ac.signal.aborted) return
       const blocks = await expandHits(bookId, hits, 1)
       if (ac.signal.aborted) return
@@ -171,10 +172,12 @@ export default function ChatSheet({
 
       const ctx = blocks.map((b, i) => `[${i + 1}]${b.source === 'note' ? '（我的笔记）' : ''} ${b.text}`).join('\n\n')
       const system =
-        `你是一位帮助读者深入理解《${bookTitle}》${bookAuthor ? `（${bookAuthor}）` : ''}的阅读助手。\n` +
-        `- 优先依据下面的「原文资料」回答,引用具体内容时用 [编号] 标注来源;\n` +
-        `- 可以结合资料做合理的分析、联系与延伸,但不要脱离原文凭空编造;原文不足以回答就如实说明;\n` +
-        `- 回答用中文,有条理(可分点),既准确又有洞见,不啰嗦。`
+        `你是帮助读者理解《${bookTitle}》${bookAuthor ? `（${bookAuthor}）` : ''}的阅读助手。这是一本严肃的非虚构作品。\n` +
+        `严格遵守：\n` +
+        `1. 只依据下面的「原文资料」回答,引用具体内容时用 [编号] 标注来源;\n` +
+        `2. 绝不编造人物、情节、事实或书中没有的内容。若「原文资料」里没有与问题直接相关的内容,就明确说"检索到的原文里没有找到关于『…』的内容,可能这一节没被准确检索到",并建议用户换个说法、或在书里选中那一段再问——不要硬凑答案;\n` +
+        `3. 不要把它当小说去总结"人物/情节",按它实际的论述与案例来回答;\n` +
+        `4. 中文,有条理(可分点),忠于原文,不啰嗦。`
       const history: ChatMessage[] = curRef.current.turns
         .slice(0, -1)
         .slice(-HISTORY_TURNS)

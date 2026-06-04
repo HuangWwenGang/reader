@@ -218,6 +218,12 @@ export async function getBookVectors(bookId: string): Promise<ChunkVector[]> {
   return db.getAllFromIndex('vectors', 'bookId', bookId)
 }
 
+// All chunks for a book (text payloads) — used for keyword/lexical retrieval.
+export async function getBookChunks(bookId: string): Promise<Chunk[]> {
+  const db = await getDB()
+  return db.getAllFromIndex('chunks', 'bookId', bookId)
+}
+
 export async function getChunksByIds(ids: string[]): Promise<Chunk[]> {
   const db = await getDB()
   const out = await Promise.all(ids.map((id) => db.get('chunks', id)))
